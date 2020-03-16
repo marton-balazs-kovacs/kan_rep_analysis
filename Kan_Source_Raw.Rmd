@@ -1,30 +1,267 @@
 ---
 title: "Kan_Source_Raw"
 author: "Marton Kovacs"
-date: '2019 october 6 '
+date: '`r format(Sys.time(), "%d %B, %Y")`'
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+# Load packages
+
+```{r}
+library(tidyverse)
+library(readbulk)
+library(lubridate)
 ```
 
-## R Markdown
+# Load custom functions
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r}
+source("utils.R")
 ```
 
-## Including Plots
+# Download data from OSF
+## OSF auth (until project is public)
 
-You can also embed plots, for example:
+Read/write token should be created on OSF and it should be named as "osf_token_write".
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r osf authentication}
+osf_auth(token = read_lines(list.files(pattern ="osf_token_write_.*.txt")))
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## Connect to data OSF folder
+
+```{r osf connect to OSF folder, message = FALSE}
+data_guid <- "6bd43"
+
+kan_project <- osf_retrieve_node(data_guid)
+```
+
+## Download data locally
+
+```{r osf download data, message = FALSE, echo = T, results = "hide"}
+# Save data path in the project repository
+local_data_pth <- file.path("Data","Source")
+
+# Create local data structure if it is missing
+create_local_structure(local_data_pth)
+
+# List experiment folders on OSF for the specific data type
+experiment_folders <- 
+  kan_project %>% 
+  osf_ls_nodes() %>% 
+  filter(name == "Source") %>% 
+  osf_ls_files()
+
+experiment_folders %>% 
+  group_by(name) %>% 
+  do(download_files(.,local_data_pth))
+```
+
+## Unzip contributing lab level folders containing the individual datafiles
+
+```{r}
+file_names <- list.files(local_data_pth, full.names = T, recursive = T)
+
+walk(file_names,
+     ~ unzip(zipfile = .x,
+             exdir = str_remove(.x, ".zip")))
+
+file.remove(file_names)
+
+# uncomment following line to remove the data   
+# remove_local_data(local_data_pth)
+```
+
+## Create folder structure for the output files
+
+```{r}
+# Save data path in the project repository
+local_data_pth <- file.path("Data","Raw")
+
+# Create local data structure if it is missing
+create_local_structure(local_data_pth)
+```
+
+# Experiment 1
+## Read files
+
+Read and merge individual datafiles from the subfolders.
+The following variables are added to the tibbles during merging:
+* data_type: Whether the dataset is "Source", "Raw", "Processed" datafile.
+* filename: Name of the local file that contained the data before merging.
+* experiment: Whether the dataset is from "Experiment  1", "Experiment  2" or "Experiment  3"
+* lab: Where were the data collected. Options: "Australia", "Hungary", "Singapore", "United Kingdom"
+
+```{r}
+# test <- read_plus(pattern = "*.csv",
+#                     path = "Data/Source/",
+#                     subfolder_name = "Exp1")
+# TODO: fix data type error in bind_row
+
+source <- read_opensesame(directory = "Data/Source/Exp1", subdirectories = TRUE, verbose = T) %>% mutate(filename = str_remove_all(File, ".*/|.csv"),
+                lab = Subdirectory) %>%
+  select(-File, -Subdirectory)
+```
+
+## Exclusion
+
+In the first version of the data collection program there were a few errors. The data collected with the erroneous program were excluded from further analysis.
+
+```{r}
+source <-
+  source %>% 
+  mutate(datetime = lubridate::mdy_hms(datetime)) %>% 
+  filter(datetime > lubridate::as_datetime("2019-09-23 05:52:00"))
+
+source <- 
+  source %>% 
+  group_by(filename) %>% 
+  filter(!all(is.na(sentence_id & word_no)))
+```
+
+## Saving files
+
+We save the merged dataframes in .tsv format.
+
+```{r}
+write_tsv(source, "Data/Raw/Exp1/Kan_Raw_Exp1_data.tsv")
+```
+
+Final tsv files were uploaded to OSF manually.
+
+```{r}
+rm(source)
+```
+
+# Experiment 2
+## Read files
+
+Read and merge individual datafiles from the subfolders.
+The following variables are added to the tibbles during merging:
+* data_type: Whether the dataset is "Source", "Raw", "Processed" datafile.
+* filename: Name of the local file that contained the data before merging.
+* experiment: Whether the dataset is from "Experiment  1", "Experiment  2" or "Experiment  3"
+* lab: Where were the data collected. Options: "Australia", "Hungary", "Singapore", "United Kingdom"
+
+```{r}
+# source <-
+#   read_plus(pattern = "*.csv",
+#                     path = "Data/Source/",
+#                     subfolder_name = "Exp2")
+## TODO: Find the problem with read_plus. bind_rows want to convert a chr vector to logical: response_Instructions_7
+
+source <- read_opensesame(directory = "Data/Source/Exp2", subdirectories = TRUE, verbose = T) %>% mutate(filename = str_remove_all(File, ".*/|.csv"),
+                lab = Subdirectory) %>%
+  select(-File, -Subdirectory)
+```
+
+## Dealing with open ended questions
+
+There were no  personal data collected during the experiment. However, the participants could provide feedback about the experiment as a free text response in the [comment] variable.
+We save the content of this variable into a different datafile.
+
+```{r}
+comment <-
+  source %>% 
+  select(filename, comment) %>% 
+  filter(!is.na(comment),
+         comment != "")
+```
+
+Save comments to a separate datafile that will not be shared on OSF.
+
+```{r}
+# write_tsv(comment, "Data/Kan_Exp2_Comment_data.tsv")
+```
+
+Dropping comments from the dataset. Opensesame saves the comment in a new row. Therefore, most of the participants have 272 rows in their dataset (271 trials + 1 comment). Some participants however only have 271 as the comment row is missing. This can happen if someone does not close the running experiment properly. Therefore, we only keep the first 271 row from each participant.
+
+```{r}
+source <-
+  source %>%
+  group_by(filename) %>% 
+  mutate(n_row = row_number()) %>% 
+  filter(n_row != 272) %>% 
+  select(-n_row)
+```
+
+## Saving files
+
+We save the merged dataframes in .tsv format.
+
+```{r}
+write_tsv(source, "Data/Raw/Exp2/Kan_Raw_Exp2_data.tsv")
+```
+
+Final tsv files were uploaded to OSF manually.
+
+```{r}
+rm(source,
+   comment)
+```
+
+# Experiment 3
+## Read files
+
+Read and merge individual datafiles from the subfolders.
+The following variables are added to the tibbles during merging:
+* data_type: Whether the dataset is "Source", "Raw", "Processed" datafile.
+* filename: Name of the local file that contained the data before merging.
+* experiment: Whether the dataset is from "Experiment  1", "Experiment  2" or "Experiment  3"
+* lab: Where were the data collected. Options: "Australia", "Hungary", "Singapore", "United Kingdom"
+
+```{r}
+# source <- read_plus(pattern = "*.csv",
+#                   path = "Data/Source/",
+#                   subfolder_name = "Exp3",
+#                   sep = ",")
+
+source <- read_opensesame(directory = "Data/Source/Exp3", subdirectories = TRUE, verbose = T) %>% mutate(filename = str_remove_all(File, ".*/|.csv"),
+                lab = Subdirectory) %>%
+  select(-File, -Subdirectory)
+```
+
+## Dealing with open ended questions
+
+There were no  personal data collected during the experiment. However, the participants could provide feedback about the experiment as a free text response in the [comment] variable.
+We save the content of this variable into a different datafile.
+
+```{r}
+comment <-
+  source %>% 
+  select(filename, comment) %>% 
+  filter(!is.na(comment),
+         comment != "")
+```
+
+Save comments to a separate datafile that will not be shared on OSF.
+
+```{r}
+# write_tsv(comment, "Data/Kan_Exp3_Comment_data.tsv")
+```
+
+Dropping comments from the dataset. Opensesame saves the comment in a new row. Therefore, most of the participants have 272 rows in their dataset (271 trials + 1 comment). Some participants however only have 271 as the comment row is missing. This can happen if someone does not close the running experiment properly. Therefore, we only keep the first 271 row from each participant.
+
+```{r}
+source <-
+  source %>%
+  group_by(filename) %>% 
+  mutate(n_row = row_number()) %>% 
+  filter(n_row != 272) %>% 
+  select(-n_row)
+```
+
+## Saving files
+
+We save the merged dataframes in .tsv format.
+
+```{r}
+write_tsv(source, "Data/Raw/Exp3/Kan_Raw_Exp3_data.tsv")
+```
+
+Final tsv files were uploaded to OSF manually.
+
+```{r}
+# Clear environment
+rm(list = ls(all.names = TRUE))
+```

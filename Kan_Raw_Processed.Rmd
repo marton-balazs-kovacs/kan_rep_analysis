@@ -1,30 +1,1525 @@
 ---
 title: "Kan_Raw_Processed"
 author: "Marton Kovacs"
-date: '2019 october 6 '
+date: '`r format(Sys.time(), "%d %B, %Y")`'
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+# Load packages
+
+```{r}
+library(tidyverse)
+library(osfr)
+library(readxl)
+library(readbulk)
+library(lme4)
+library(stringi)
+library(broom)
+library(sjmisc)
 ```
 
-## R Markdown
+# Load custom functions
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r}
+source("utils.R")
 ```
 
-## Including Plots
+# Download data from OSF
+## OSF auth (until project is public)
 
-You can also embed plots, for example:
+Read/write token should be created on OSF and it should be named as "osf_token_write".
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r osf authentication}
+# osf_auth(token = read_lines(list.files(pattern ="osf_token_write_.*.txt")))
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## Connect to data OSF folder
+
+```{r osf connect to OSF folder, message = FALSE}
+# data_guid <- "c9vmx"
+# 
+# kan_project <- osf_retrieve_node(data_guid)
+```
+
+## Download data locally
+
+```{r osf download data, message = FALSE, echo = T, results = "hide"}
+# Save data path in the project repository
+# local_data_pth <- file.path("Data","Raw")
+# 
+# # Create local data structure if it is missing
+# create_local_structure(local_data_pth)
+# 
+# # TODO: Rewrite this part if there are data uploaded
+# # List datafiles on OSF
+# data_files <- 
+#   kan_project %>% 
+#   osf_ls_files() %>% 
+#   filter(name == "Processed") %>% 
+#   osf_ls_files() 
+# 
+# data_files %>% 
+#   group_by(name) %>% # for each experiment type
+#   do(download_files(.,local_data_pth))
+
+# uncomment following line to remove the data   
+# remove_local_data(local_data_pth)
+```
+
+## Create folder structure for the output files
+
+```{r}
+# # Save data path in the project repository
+# local_data_pth <- file.path("Data","Processed")
+# 
+# # Create local data structure if it is missing
+# create_local_structure(local_data_pth)
+```
+
+# Exp 1
+## Read files
+
+Read datafile from the subfolder of the given experiment.
+
+```{r}
+raw <- read_tsv("Data/Raw/Exp1/Kan_Raw_Exp1_data.tsv")
+```
+
+## EDA
+### Number of participants
+
+```{r}
+raw %>%
+  distinct(filename) %>% 
+  count
+```
+
+### Number of participants by lab
+
+```{r}
+raw %>%
+  group_by(lab) %>% 
+  distinct(filename) %>% 
+  count
+```
+
+## Selecting only needed variables
+
+Opensesame logs several variables that are not needed for the further analysis. For the sake of simplicity, we only keep the variables that are needed.
+
+```{r}
+raw <-
+  raw %>%
+  select(filename,
+         lab,
+         count_trial_decider,
+         live_row,
+         live_row_practice_loop,
+         procedure,
+         stim_type,
+         stimulus,
+         stim_color,
+         conflict_condition,
+         correct,
+         correct_response,
+         correct_stroop_input,
+         critical_area,
+         sentence_id,
+         word_no,
+         datetime,
+         response,
+         response_stroop_input,
+         response_keyboard_input,
+         response_keyboard_input_1,
+         response_keyboard_input_2,
+         response_keyboard_input_3,
+         response_time,
+         response_time_stroop_input,
+         response_time_keyboard_input,
+         response_time_keyboard_input_1,
+         response_time_keyboard_input_2,
+         response_time_keyboard_input_3,
+         count_end_sent_logger,
+         count_sentence,
+         count_start_sentence,
+         count_stroop_input,
+         count_stroop_sequence,
+         acc,
+         avg_rt)
+```
+
+## Variable transformation
+
+Creating unique participant_id for the participants.
+
+```{r}
+raw <- 
+  raw %>%
+  mutate(participant_id = str_remove(filename, "subject-"),
+         participant_id = case_when(lab == "Evans" ~ paste0("10", participant_id),
+                                    TRUE ~ participant_id)) %>% 
+  select(participant_id, everything(), -filename)
+```
+
+## Dividing parts of the experiment into different tables
+### Practice trials
+
+```{r}
+practice_raw <-
+  raw %>%
+  filter(is.na(procedure) & is.na(stim_type))
+```
+
+### Baseline stroop trials
+
+```{r}
+baseline_raw <-
+  raw %>% 
+  filter(is.na(procedure) & !is.na(stim_type))
+```
+
+### Practice with Stroop and sentence trials
+
+```{r}
+practice_sent_stroop_raw <-
+  raw %>% 
+  filter(!is.na(procedure) & is.na(count_trial_decider))
+```
+
+### Test trials
+
+These are the trials that we are going to process for the further analysis.
+
+```{r}
+test_raw <- 
+  raw %>% 
+  filter(!is.na(count_trial_decider)) %>% 
+  select(-live_row_practice_loop,
+         -acc,
+         -avg_rt,
+         -contains("count_"),
+         -correct_stroop_input)
+```
+
+## Cleaning the test trials
+### Read specification of the stimuli for the test trials
+
+We read the specifications of the trials that were not logged: last words of the sentences.
+
+```{r}
+test_trial_spec <- read_xlsx("exp1_test_trial_spec.xlsx", sheet = 1)
+```
+
+### Creating variables for the test trials
+
+We create a [trial_id] variable that is unique for each trial of every participant.
+Because of a mistake during the creation of the first experiment we did not log the last word of each sentence. However, the program logs the participants answer in the following line in the variable of the specific modul [keyboard_input_3]. However, opensesame iterates the last pressed answer option in the variable, therefore we kept only those values that are following the missing trial.
+
+```{r}
+test_raw <-
+  test_raw %>% 
+  rename(trial_id = live_row) %>% 
+  mutate(response_keyboard_input_3 = case_when(trial_id %in% (test_trial_spec$trial_id + 1) ~ response_keyboard_input_3,
+                                               TRUE ~ NA_character_),
+         response_time_keyboard_input_3 = case_when(!is.na(response_keyboard_input_3) ~ response_time_keyboard_input_3,
+                                                    TRUE ~ NA_real_))
+```
+
+### Testing the transformation
+
+There should be NO difference between the two variables if the code above was working right.
+
+```{r}
+setdiff(
+test_raw %>% 
+  filter(!is.na(response_keyboard_input_3)) %>% 
+  pull(trial_id),
+test_trial_spec %>% 
+  mutate(trial_id = trial_id + 1) %>% 
+  pull(trial_id)
+)
+```
+
+### Creating a datatable of the missing trials
+
+In a separate datatable we join the logged responses of the missing trials with their specifications imported from the **exp1_test_trial_spec.xlsx** file.
+
+```{r}
+sentence_last_word_responses <-
+  test_raw %>% 
+  select(trial_id,
+         participant_id,
+         lab,
+         response_keyboard_input_3,
+         response_time_keyboard_input_3) %>% 
+  mutate(response = response_keyboard_input_3,
+         response_time = response_time_keyboard_input_3) %>% 
+  select(-response_keyboard_input_3, -response_time_keyboard_input_3) %>% 
+  drop_na(response) %>% 
+  mutate(trial_id = trial_id - 1) %>% 
+  left_join(., test_trial_spec, by = "trial_id")
+```
+
+### Combining the datatable of the missing trials with the full dataset
+
+After we add the rows containing the answers and full specifications of the missing trials we recalculate the [correct] variable for the just added last word sentences as well. However, the correctness of the answer to this is not going to matter in the later analysis.
+
+```{r}
+test_raw <- 
+  test_raw %>% 
+  bind_rows(sentence_last_word_responses) %>% 
+  arrange(participant_id, trial_id) %>%
+  mutate(correct = as.integer(correct),
+         correct = case_when(is.na(correct) & response == correct_response ~ 1L,
+                             is.na(correct) & response != correct_response ~ 0L,
+                             TRUE ~ correct))
+```
+
+Filling the datetime value for the missing trials.
+
+```{r}
+test_raw <- 
+  test_raw %>% 
+  group_by(participant_id) %>% 
+  fill(datetime) %>% 
+  ungroup()
+```
+
+### Dropping variables
+
+The following variables are not needed for further analysis as all the information stored in them are now included in other, cleaner variables.
+
+```{r}
+test_raw <-
+  test_raw %>% 
+  select(datetime,
+         everything(),
+         -response_stroop_input,
+         -response_time_stroop_input,
+         -response_keyboard_input,
+         -response_time_keyboard_input,
+         -response_keyboard_input_1,
+         -response_time_keyboard_input_1,
+         -response_keyboard_input_2,
+         -response_time_keyboard_input_2,
+         -response_keyboard_input_3,
+         -response_time_keyboard_input_3)
+```
+
+### Excluding participant because of the comprehension probe
+
+The data of those participants who experienced any technical problems during the experiment and of those who performed under 70% level of comprehension probe trials were not included in any of the analyses.
+Calculating the comprehension rates of each participant.
+
+```{r}
+sentence_comprehension <-
+  test_raw %>% 
+  filter(stim_type == "Question") %>% 
+  group_by(participant_id, correct) %>% 
+  count() %>% 
+  group_by(participant_id) %>% 
+  mutate(sum_n = sum(n),
+         comprehension_score = n / sum_n,
+         freq = n / sum_n * 100) %>% 
+  ungroup()
+```
+
+Descriptive statistics of those participants who scored above 50% on the sentence comprehension task.
+
+```{r}
+sentence_comprehension %>% 
+  filter(freq > 50) %>% 
+  summarise(mean_comprehension_score = mean(comprehension_score),
+            sd_comprehension_score = sd(comprehension_score))
+```
+
+Extracting the participant ids of those participants who have to be excluded because of their performance on the sentence comprehension task.
+
+```{r}
+exclude_comprehension <-
+  sentence_comprehension %>% 
+  filter(correct == 1 & freq < 70) %>% 
+  select(participant_id)
+```
+
+Excluding the paticipants and creating a new dataset for this analysis.
+
+```{r}
+test_raw <-
+  test_raw %>% 
+  anti_join(., exclude_comprehension, by = "participant_id")
+```
+
+### Testing the number of responses per participant
+
+Each participant should have complated XXX trials () during the test part of the experiment.
+
+Number of responses per participant
+
+```{r}
+test_raw %>% 
+  group_by(participant_id) %>% 
+  count()
+```
+
+Participants who has different number of answers
+
+```{r}
+test_raw %>% 
+  group_by(participant_id) %>% 
+  count() %>% 
+  filter(n != 1022)
+```
+
+## Creating a dataset for the main analysis
+
+After cleaning the dataset and addding the missing information about the sentences, we create a dataset for the main accuracy and rt analysis of the first experiement.
+We only keep the variables that are needed for this analysis.
+We only keep stroop trials that are following congruent and incongruent sentences, but not filler sentences.
+We also create new variables needed for these analysis.
+
+```{r}
+main_analysis_data <-
+  test_raw %>% 
+  select(participant_id,
+         lab,
+         trial_id,
+         procedure,
+         stim_type,
+         stimulus,
+         stim_color,
+         correct,
+         response_time) %>% 
+  filter(procedure %in% c("Proc2", "ProcStroop")) %>% 
+  mutate(is_previous_sentence = case_when(procedure == "ProcStroop" & lag(procedure == "Proc2") & lag(stim_type) %in% c("Congruent", "Incongruent") ~ 1L,
+                                       TRUE ~ 0L),
+         is_previous_congruent = case_when(is_previous_sentence == 1L ~ lag(stim_type),
+                                         TRUE ~ NA_character_),
+         is_previous_congruent = case_when(is_previous_congruent == "Congruent" ~ 1L,
+                                           is_previous_congruent == "Incongruent" ~ 0L,
+                                            TRUE ~ NA_integer_),
+         is_congruent = case_when(is_previous_sentence == 1L & stim_type == "Congruent" ~ 1L,
+                                  is_previous_sentence == 1L & stim_type == "Incongruent" ~ 0L,
+                                  TRUE ~ NA_integer_),
+         is_previous_correct = case_when(is_previous_sentence == 1L ~ lag(correct),
+                                         TRUE ~ NA_integer_),
+         is_correct = correct) %>% 
+  filter(is_previous_sentence == 1L) %>% 
+  select(-correct, -procedure, -is_previous_sentence)
+```
+
+## Creating data for the reaction time analysis
+
+For the reaction time analysis we only keep correct sentences.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_data %>% 
+  filter(is_correct == 1L)
+```
+
+### Excluding participants who has a condition with no data
+
+The number of conditions per participant. Because we excluded the incorrect trials, it can happen that a participant does no have reeaction time responses from all the 4 conditions.
+
+```{r}
+missing_condition <-
+  main_analysis_rt_data %>% 
+  group_by(participant_id, is_congruent, is_previous_congruent) %>% 
+  count() %>% 
+  group_by(participant_id) %>%
+  count() %>% 
+  filter(n != 4) %>%
+  select(participant_id) %>% 
+  ungroup()
+```
+
+Excluding these participants from further analysis.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_rt_data %>%
+  anti_join(., missing_condition, by = "participant_id")
+```
+
+The number of participants who has missing conditions:
+
+```{r}
+count(missing_condition)
+```
+
+### Replacing outliers with a cutoff value
+
+We calculate the mean reaction time of the test trials for each participant. And create a lower and an upper cutoff value for the individual reaction time values.
+
+```{r}
+stroop_outliers <-
+  main_analysis_rt_data %>% 
+  group_by(participant_id) %>% 
+  summarize(mean_rt = mean(response_time, na.rm =T),
+            sd_rt = sd(response_time, na.rm = T),
+            cutoff_value_high = mean_rt + 2.5 * sd_rt,
+            cutoff_value_low = mean_rt - 2.5 * sd_rt)
+```
+
+After joining the aggregated reaction data with the original datatable we replace the individual reaction times that are outside of the higher and upper bound of the cutoff values.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_rt_data %>% 
+  left_join(., stroop_outliers, by = "participant_id") %>% 
+  mutate(is_outlier = case_when(response_time > cutoff_value_high ~ 1L,
+                                response_time < cutoff_value_low ~ 2L,
+                                TRUE ~ 0L),
+         response_time = case_when(is_outlier == 1L ~ cutoff_value_high,
+                                   is_outlier == 2L ~ cutoff_value_low,
+                                   TRUE ~ response_time))
+```
+
+### Saving data
+
+Saving the processed reaction time data for the main analysis of the first experiment.
+
+```{r}
+write_tsv(main_analysis_rt_data, "Data/Processed/Exp1/Kan_Processed_Exp1_Main_Rt_data.tsv")
+```
+
+## Creating data for the accuracy analysis
+
+Create a new datatable for the accuracy analysis of Exp1.
+
+```{r}
+main_analysis_acc_data <-
+  main_analysis_data
+```
+
+### Saving data
+
+Saving the processed accuracy data for the main analysis of the first experiment.
+
+```{r}
+write_tsv(main_analysis_acc_data, "Data/Processed/Exp1/Kan_Processed_Exp1_Main_Acc_data.tsv")
+```
+
+## Outcome neutral tests data preprocessing
+### Sentence task
+
+```{r}
+neutral_analysis_sentence <-
+  test_raw
+```
+
+#### Read the specifications of the sentence regions
+
+Each sentence is diveded into sentence regions. A sentence region can be consisted of multiple words. This file can be found in the supplementary materials and it contains all the information about the sentence regions.
+
+```{r}
+sentence_attributes <- read_xlsx("sentence_region.xlsx", sheet = 1)
+```
+
+There are some missing recurrent values in the sentence_attributes dataset. Now we fill these up.
+
+```{r}
+sentence_attributes <-
+  sentence_attributes %>% 
+  group_by(sentence_id) %>% 
+  fill(sentence_type,
+       sentence)
+```
+
+Join the sentence region specifications to the full dataset.
+
+```{r}
+neutral_analysis_sentence <-
+  neutral_analysis_sentence %>% 
+  left_join(., sentence_attributes, by = c("sentence_id", "word_no"))
+```
+
+#### Descriptive statistics of the sentence specifications
+
+The number of individual sentences per sentence type:
+
+```{r}
+sentence_attributes %>% 
+  group_by(sentence_type) %>% 
+  distinct(sentence_id) %>%
+  count() %>% 
+  ungroup() %>% 
+  mutate(sum_n = sum(n))
+```
+
+The number of sentence regions per sentence:
+
+```{r}
+sentence_attributes %>% 
+  group_by(sentence_id) %>% 
+  distinct(sentence_region_no) %>% 
+  count()
+```
+
+The distribution of the number of sentence regions:
+
+```{r}
+sentence_attributes %>% 
+  group_by(sentence_id) %>% 
+  distinct(sentence_region_no) %>% 
+  summarize(count_sentence_regions = n()) %>% 
+  group_by(count_sentence_regions) %>% 
+  count()
+```
+
+The sum of all sentence regions:
+
+```{r}
+sentence_attributes %>% 
+  group_by(sentence_id, sentence_type) %>% 
+  distinct(sentence_region_no) %>%
+  summarize(count_sentence_regions = n()) %>%
+  group_by(sentence_type) %>% 
+  summarize(sentence_regions_per_sentence_type = sum(count_sentence_regions)) %>% 
+  ungroup() %>% 
+  mutate(sum = sum(sentence_regions_per_sentence_type))
+```
+
+The id number of the sentence region that contains the disambiguating region per sentence:
+
+```{r}
+sentence_attributes %>% 
+  filter(disambiguiting_region == 1L) %>% 
+  group_by(sentence_id) %>% 
+  distinct(sentence_region_no, .keep_all = T) %>% 
+  select(sentence_id, sentence_type, sentence_region_no, sentence_region)
+```
+
+Check which sentence regions contains the word "that" in congruent sentences:
+
+```{r}
+sentence_attributes %>% 
+  filter(sentence_type == "Congruent",
+         word == "that") %>% 
+  select(sentence_id, sentence_type, sentence_region, sentence_region_no, word)
+```
+
+#### Replacing outlier sentence reading times
+
+To mitigate the influence of outliers, we replaced the raw sentence reading times of those trials that are 2.5 SD s above the participant`s mean sentence reading time across all the sentence types with the 2.5 SD cutoff value of the participant.
+
+```{r}
+sentence_reading_time <- 
+  neutral_analysis_sentence %>% 
+  filter(procedure %in% c("ProcSent", "Proc2")) %>% 
+  group_by(participant_id) %>% 
+  summarize(mean_reading_time = mean(response_time, na.rm = T),
+            sd_reading_time = sd(response_time, na.rm = T),
+            cutoff_reading_time = mean_reading_time + 2.5 * sd_reading_time)
+```
+
+We are joining the calculated cutoff values to the full dataset.
+
+```{r}
+neutral_analysis_sentence <-
+  neutral_analysis_sentence %>% 
+  left_join(., sentence_reading_time, by = "participant_id") %>% 
+  mutate(mean_reading_time = case_when(procedure %ni% c("ProcSent", "Proc2") ~ NA_real_,
+                                       TRUE ~ mean_reading_time),
+         sd_reading_time = case_when(procedure %ni% c("ProcSent", "Proc2") ~ NA_real_,
+                                       TRUE ~ sd_reading_time),
+         cutoff_reading_time = case_when(procedure %ni% c("ProcSent", "Proc2") ~ NA_real_,
+                                       TRUE ~ cutoff_reading_time))
+```
+
+We are tagging the trials where the response time is considered as an outlier and replacing that response time with the calculated cutoff value.
+
+```{r}
+neutral_analysis_sentence <-
+  neutral_analysis_sentence %>% 
+  mutate(outlier_reading_time = case_when(procedure %in% c("ProcSent", "Proc2") & response_time >= cutoff_reading_time ~ 1L,
+                                          procedure %in% c("ProcSent", "Proc2") & response_time < cutoff_reading_time ~ 0L,
+                                          TRUE ~ NA_integer_),
+         response_time = case_when(outlier_reading_time == 1L ~ cutoff_reading_time,
+                                   TRUE ~ response_time))
+```
+
+#### Calculating the number of characters in each sentence region
+
+We are cutting the white spaces from each word. As the sentence attributes were created by hand they might contain not needed white spaces.
+When we are calculating the number of characters in each word.
+
+```{r}
+neutral_analysis_sentence <-
+  neutral_analysis_sentence %>% 
+  mutate(word = str_trim(word, side = "both"),
+         word_length = stri_length(word))
+```
+
+#### Calculating the mean sentence region reading time and number of characters
+
+As a sentence region can be consisted of multiple words and we measured response time for each word we calculate the mean reading time and the mean number of characters of each sentence region.
+
+```{r}
+sentence_types <- 
+  sentence_attributes %>% 
+  distinct(sentence_id, sentence_type)
+
+mean_sentence_values <-
+  neutral_analysis_sentence %>% 
+  filter(procedure %in% c("ProcSent", "Proc2")) %>%
+  group_by(participant_id, sentence_id, sentence_region_no) %>% 
+  summarize(mean_sentence_region_reading_time = mean(response_time),
+            mean_sentence_region_word_length = mean(word_length)) %>% 
+  ungroup() %>% 
+  left_join(., sentence_types, by = "sentence_id")
+```
+
+As a test we count the number of sentences per participant. Each participants should have 71 sentences.
+
+```{r}
+mean_sentence_values %>%
+  group_by(participant_id) %>% 
+  distinct(sentence_id) %>% 
+  count()
+```
+
+As a test we check the number of all sentence regions per participant. Each participants should have 471 sentence regions.
+
+```{r}
+mean_sentence_values %>% 
+  group_by(participant_id) %>% 
+  summarize(sum_all_sentence_regions = n())
+```
+
+#### Removing the word "that" from the congruent sentences
+
+All the congruent sentences contains the word "that", which makes the sentences unambiguous. This word is going to be left out from the comparison. In every congruent sentence the word "that" is in the 3rd sentence region. Therefore in the final comparison we will compare the 3rd sentence regions of the incongruent sentences with the 4th sentence region of the congruent sentences. However, to make the analysis easier we assign new sentence region no's to the congruent sentences without the word "that"  now. Also, we do not use the word in the creation of the linear regression models either.
+
+```{r}
+mean_sentence_values <- 
+  mean_sentence_values %>% 
+  filter(!(sentence_type == "Congruent" & sentence_region_no == 3)) %>% 
+  mutate(sentence_region_no = as.integer(sentence_region_no),
+         sentence_region_no = case_when(sentence_type == "Congruent" & sentence_region_no == 4L ~ 3L,
+                                        sentence_type == "Congruent" & sentence_region_no == 5L ~ 4L,
+                                        sentence_type == "Congruent" & sentence_region_no == 6L ~ 5L,
+                                        sentence_type == "Congruent" & sentence_region_no == 7L ~ 6L,
+                                        sentence_type == "Congruent" & sentence_region_no == 8L ~ 7L,
+                                        sentence_type == "Congruent" & sentence_region_no == 9L ~ 8L,
+                                        TRUE ~ sentence_region_no))
+```
+
+#### Calculating the residual reading times
+ 
+In order to account for the biasing effect of the length of the word on the reading time, we calculated the residual reading time for each word. For every sentence-region (see the supplementary materials for the partition of each sentence into sentence-regions) of each participant we applied a simple linear regression with the actual reading time as the outcome variable and the length of the region in the number of characters as the predictor variable. We included only the congruent ( N = 21) and the filler sentences ( N = 29) in the linear regression, as measures of normal reading time.
+
+```{r}
+residual_model <-
+  mean_sentence_values %>% 
+  filter(sentence_type != "Incongruent") %>%
+  group_by(participant_id, sentence_region_no) %>% 
+  group_nest() %>% 
+  mutate(model = map(data,
+                     ~ lm(mean_sentence_region_reading_time ~ mean_sentence_region_word_length,
+                          data = .x)))
+```
+
+This datatable has 1188 values because there are 132 participants and the maximum number of sentence regions is 9 for the longest sentence, therefore 132 * 9 = 1188. 
+
+Now that we have the fitted model in the model variable for each sentence of each sentence region, we calculate the predicted reading times of the model for the congruent sentences.
+
+```{r}
+predicted_reading_time_model_con <-
+  mean_sentence_values %>% 
+  filter(sentence_type == "Congruent") %>%
+  group_by(participant_id, sentence_region_no) %>% 
+  group_nest() %>% 
+  left_join(., select(residual_model, -data), by = c("participant_id", "sentence_region_no")) %>% 
+  mutate(predicted_reading_time = map2(data, model,
+                                           ~ broom::augment(x = .y,
+                                                            newdata = .x)))
+```
+
+Now that we have the predicted reading time for each sentence per sentence region we calculate the residual reading time by substracting the predicted reading time from the mean raw reading time.
+
+```{r}
+residual_reading_time_con <-
+  predicted_reading_time_model_con %>% 
+  select(participant_id, sentence_region_no, predicted_reading_time) %>% 
+  unnest(cols = c(predicted_reading_time)) %>% 
+  mutate(residual_reading_time = mean_sentence_region_reading_time - .fitted)
+```
+
+In the Kan et al. (2013) paper each sentence region had only one data point from each participant. Therefore, we avarage the residual reading times of the sentences for each sentence region per congruency condition per participant.
+
+```{r}
+residual_reading_time_con_aggregated <-
+  residual_reading_time_con %>% 
+  group_by(participant_id, sentence_type, sentence_region_no) %>%
+  summarise(mean_residual_reading_time = mean(residual_reading_time))
+```
+
+Now we fit the modell to the inconguent sentences to calculate the predicted reading time.
+
+```{r}
+predicted_reading_time_model_incon <-
+  mean_sentence_values %>% 
+  filter(sentence_type == "Incongruent") %>%
+  group_by(participant_id, sentence_region_no) %>% 
+  group_nest() %>% 
+  left_join(., select(residual_model, -data), by = c("participant_id", "sentence_region_no")) %>% 
+  mutate(predicted_reading_time = map2(data, model,
+                                             ~ broom::augment(x = .y,
+                                                              newdata = .x)))
+```
+
+We calculate the residual reading time for the incongruent sentences similarly to the congruent sentences.
+
+```{r}
+residual_reading_time_incon <-
+  predicted_reading_time_model_incon %>% 
+  select(participant_id, sentence_region_no, predicted_reading_time) %>% 
+  unnest(cols = c(predicted_reading_time)) %>% 
+  mutate(residual_reading_time = mean_sentence_region_reading_time - .fitted)
+```
+
+In the Kan et al. (2013) paper each sentence region had only one data point from each participant. Therefore, we avarage the residual reading times of the sentences for each sentence region per congruency condition per participant.
+
+```{r}
+residual_reading_time_incon_aggregated <-
+  residual_reading_time_incon %>% 
+  group_by(participant_id, sentence_type, sentence_region_no) %>%
+  summarise(mean_residual_reading_time = mean(residual_reading_time))
+```
+
+To create the datatable for the analysis we combine the residual reading times of the congruent and incongruent sentences.
+
+```{r}
+neutral_analysis_sentence <- 
+  bind_rows(residual_reading_time_incon_aggregated,
+            residual_reading_time_con_aggregated) %>% 
+  select(participant_id, sentence_region_no, sentence_type, mean_residual_reading_time)
+```
+
+Checking the number of responses for each sentence region:
+
+```{r}
+neutral_analysis_sentence %>% 
+  group_by(sentence_region_no, sentence_type) %>% 
+  count()
+```
+
+Transforming the datatable for the incongruent and congruent sentence region comparisons. In the congruent sentences there are more sentence regions than in the incongruent sentences. We exclude these from further analysis.
+
+```{r}
+neutral_analysis_sentence <- 
+  neutral_analysis_sentence %>% 
+  spread(key = sentence_type, value = mean_residual_reading_time) %>%
+  filter(!is.na(Incongruent)) %>%
+  group_by(sentence_region_no) %>% 
+  nest()
+```
+
+### Flagging sentence regions of interest
+
+We expect to find a difference in the temporarily ambiguous region and the disambiguating region. The sentence region in the incongruent sentences containing the temporarly ambiguous words is the 3rd region, while the disambiguation region is the 4th region.
+
+```{r}
+neutral_analysis_sentence <- 
+  neutral_analysis_sentence %>% 
+  mutate(sentence_region_type = case_when(sentence_region_no == 3L ~ "temporarly ambiguous",
+                                          sentence_region_no == 4L ~ "disambiguating ambiguous",
+                                          TRUE ~ "not ambiguous"))
+```
+
+#### Saving the dataset
+
+```{r}
+write_tsv(neutral_analysis_sentence, "Data/Processed/Exp1/Kan_Processed_Exp1_OutcomeNeutral_Sentence_data.tsv")
+```
+
+```{r}
+# Clear environment
+rm(list = ls(all.names = TRUE))
+```
+
+# Exp 2
+## Read files
+
+Read datafile from the subfolder of the given experiment.
+
+```{r}
+raw <- read_tsv("Data/Raw/Exp2/Kan_Raw_Exp2_data.tsv")
+```
+
+## Selecting only needed variables
+
+Opensesame logs several variables that are not needed for the further analysis. For the sake of simplicity, we only keep the variables that are needed.
+
+```{r}
+raw <-
+  raw %>%
+  select(datetime,
+         filename,
+         lab,
+         live_row,
+         loop_num,
+         procedure,
+         conflict_condition,
+         experiment_part,
+         stim_color,
+         stim_type,
+         stimulus,
+         correct,
+         correct_response,
+         response,
+         response_time,
+         reversal)
+```
+
+## Transforming variables
+### Variables for identification
+
+Checking the number of trials per parciticpant. Each participant should have 271 trials:
+
+```{r}
+raw %>% 
+  group_by(filename) %>% 
+  count()
+```
+
+We create a new variable called [trial_id] that records the order of the trials in each experiment part (practice, baseline, test).
+We create a unique varaible for the identification of the participants [participant_id].
+We create a varaible that mark which lab collected the data (Australia, Hungary, Singapore).
+
+```{r}
+raw <-
+  raw %>%
+  rename(trial_id = live_row)
+```
+
+Creating unique participant_id for the participants.
+
+```{r}
+raw <- 
+  raw %>%
+  mutate(participant_id = str_remove(filename, "subject-")) %>% 
+  select(participant_id, everything(), -filename)
+```
+
+There are missing values in the loopnum variable because of the way opensesame saves variables. Therefore, we fill up the missing values for each participant.
+
+```{r}
+raw <-
+  raw %>% 
+  group_by(participant_id) %>% 
+  fill(loop_num, .direction = "up") %>% 
+  ungroup()
+```
+
+### Response variables
+
+We did not record the exact responses for the incongruent necker trials but the number of reversals in the variable [reversal]. We add the content of this varible to the [response] variable.
+The response time in the incongruent necker trials were fixed as we measured the number of reversals in the time of 90 seconds, therefore the [response time] variable gets NA values for the incongruent neckert trials.
+By a mistake in the experimental program we did not record the correct response for the congruent necker trials during the test part of the experiment. Therefore, we add the correct response keys to the [correct_response] variable.
+For the incongruent necker trials there is no correct response, therefore the [correct] variable should be empty when for those trials.
+
+```{r}
+raw <-
+  raw %>%
+  mutate(reversal = case_when(procedure == "neck_inco" ~ reversal,
+                              TRUE ~ NA_real_),
+         response_time = case_when(procedure == "neck_inco" ~ NA_real_,
+                              TRUE ~ response_time),
+         correct_response = case_when(procedure == "neck_con_l" ~ "d",
+                                      procedure == "neck_con_r" ~ "f",
+                                      TRUE ~ correct_response),
+         correct = case_when(procedure == "neck_inco" ~ NA_integer_,
+                             response == correct_response ~ 1L,
+                             response != correct_response ~ 0L))
+```
+
+### Filtering test variables
+
+We only keep the test trials for the further analysis.
+
+```{r}
+test_raw <-
+  raw %>%
+  filter(experiment_part == "test")
+```
+
+The number of trials per participant:
+
+```{r}
+test_raw %>% 
+  group_by(participant_id) %>% 
+  count()
+```
+
+## Creating a dataset for the main analysis
+
+We keep only the stroop trials where the previous trial was a necker trial.
+
+```{r}
+main_analysis_data <-
+  test_raw %>% 
+  select(participant_id,
+         lab,
+         loop_num,
+         trial_id,
+         procedure,
+         conflict_condition,
+         stim_type,
+         stimulus,
+         stim_color,
+         correct,
+         response_time,
+         reversal) %>% 
+  mutate(is_previous_necker = case_when(procedure == "stroop" & lag(procedure) %in% c("neck_con_r", "neck_con_l", "neck_inco") & conflict_condition != "first_trial" ~ 1L,
+                                        TRUE ~ 0L))
+```
+
+The number of test trials per conflict condition:
+
+```{r}
+main_analysis_data %>% 
+  filter(is_previous_necker == 1L) %>% 
+  group_by(conflict_condition) %>% 
+  count()
+```
+
+We create the variables needed for the main analysis.
+
+```{r}
+main_analysis_data <-
+  main_analysis_data %>% 
+  mutate(is_previous_congruent = case_when(is_previous_necker == 1L ~ lag(stim_type),
+                                         TRUE ~ NA_character_),
+         is_previous_congruent = case_when(is_previous_congruent == "congruent" ~ 1L,
+                                           is_previous_congruent == "incongruent" ~ 0L,
+                                            TRUE ~ NA_integer_),
+         is_congruent = case_when(is_previous_necker == 1L & stim_type == "congruent" ~ 1L,
+                                  is_previous_necker == 1L & stim_type == "incongruent" ~ 0L,
+                                  TRUE ~ NA_integer_),
+         is_previous_correct = case_when(is_previous_necker == 1L & lag(procedure) %in% c("neck_con_r", "neck_con_l") ~ lag(correct),
+                                         is_previous_necker == 1L & lag(procedure) ==  "neck_inco" ~ NA_integer_,
+                                         TRUE ~ NA_integer_)) %>% 
+  rename(is_correct = correct)
+```
+
+### Creating accuracy analysis data
+#### Reversal assignment
+
+We assign each participant to a reversal group based on the experienced reversal number in the incongruent necker trials.
+
+```{r}
+reversal_assignment <-
+  main_analysis_data %>% 
+  filter(procedure == "neck_inco") %>% 
+  group_by(participant_id) %>% 
+  summarize(mean_reversal = mean(reversal)) %>% 
+  dicho(mean_reversal,  dich.by = "median") %>% 
+  rename(reversal_group = mean_reversal_d) %>% 
+  mutate(reversal_group = case_when(reversal_group == "0" ~ "low",
+                                    reversal_group == "1" ~ "high"))
+```
+
+Check the avarge number of experienced reversals across participants:
+
+```{r}
+reversal_assignment %>% 
+  group_by(reversal_group) %>% 
+  summarize(group_mean_reversal = mean(mean_reversal, na.rm = T),
+            sd_reversal = sd(mean_reversal, na.rm = T))
+```
+
+Join the calculated reversal group assignment with the full dataset.
+
+```{r}
+main_analysis_acc_data <-
+  main_analysis_data %>% 
+  left_join(., reversal_assignment, by = "participant_id")
+```
+
+#### Filtering the needed trials
+
+For the analysis we keep only the Stroop trials, that were followed by a Necker cube.
+
+```{r}
+main_analysis_acc_data <-
+  main_analysis_acc_data %>% 
+  filter(is_previous_necker == 1L)
+```
+
+#### Dropping not needed variables
+
+```{r}
+main_analysis_acc_data <-
+  main_analysis_acc_data %>% 
+  select(-is_previous_necker,
+         -reversal)
+```
+
+#### Saving the dataset
+
+```{r}
+write_tsv(main_analysis_acc_data, "Data/Processed/Exp2/Kan_Processed_Exp2_Main_Acc_data.tsv")
+```
+
+### Creating reaction time analysis data
+
+```{r}
+main_analysis_rt_data <- main_analysis_data
+```
+
+#### Excluding participants who has a condition with no data
+
+The number of conditions per participant. Because we excluded the incorrect trials, it can happen that a participant does no have reeaction time responses from all the 4 conditions.
+
+```{r}
+missing_condition <-
+  main_analysis_rt_data %>% 
+  filter(is_previous_necker == 1L,
+         is_correct == 1L) %>%
+  group_by(participant_id, is_congruent, is_previous_congruent) %>% 
+  count() %>% 
+  group_by(participant_id) %>%
+  count() %>% 
+  filter(n != 4) %>%
+  select(participant_id) %>% 
+  ungroup()
+```
+
+Excluding these participants from further analysis.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_rt_data %>%
+  anti_join(., missing_condition, by = "participant_id")
+```
+
+The number of participants who has missing conditions:
+
+```{r}
+count(missing_condition)
+```
+
+#### Reversal assignment
+
+We assign each participant to a reversal group based on the experienced reversal number in the incongruent necker trials.
+
+```{r}
+reversal_assignment <-
+  main_analysis_rt_data %>% 
+  filter(procedure == "neck_inco") %>% 
+  group_by(participant_id) %>% 
+  summarize(mean_reversal = mean(reversal)) %>% 
+  dicho(mean_reversal,  dich.by = "median") %>% 
+  rename(reversal_group = mean_reversal_d) %>% 
+  mutate(reversal_group = case_when(reversal_group == "0" ~ "low",
+                                    reversal_group == "1" ~ "high"),
+         reversal_group = as.factor(reversal_group))
+```
+
+Check the avarge number of experienced reversals across participants:
+
+```{r}
+reversal_assignment %>% 
+  group_by(reversal_group) %>% 
+  summarize(group_mean_reversal = mean(mean_reversal, na.rm = T),
+            sd_reversal = sd(mean_reversal, na.rm = T))
+```
+
+Join the calculated reversal group assignment with the full dataset.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_rt_data %>% 
+  left_join(., reversal_assignment, by = "participant_id")
+```
+
+#### Keeping only correct trials
+
+For the reaction time analysis we keep only the correct Stroop trials.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_rt_data %>% 
+  filter(is_correct == 1L)
+```
+
+#### Replacing outliers with a cutoff value
+
+To mitigate the influence of outliers, we replaced the raw sentence reading times of those trials that are 2.5 SD s above the participant`s mean sentence reading time across all the sentence types with the 2.5 SD cutoff value of the participant.
+
+```{r}
+stroop_outliers <-
+  main_analysis_rt_data %>% 
+  group_by(participant_id) %>% 
+  summarize(mean_rt = mean(response_time, na.rm =T),
+            sd_rt = sd(response_time, na.rm = T),
+            cutoff_value_high = mean_rt + 2.5 * sd_rt,
+            cutoff_value_low = mean_rt - 2.5 * sd_rt)
+```
+
+We join the calculated cutoff values with the full dataset and replace the outlier response times with the cutoff values.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_rt_data %>% 
+  left_join(., stroop_outliers, by = "participant_id") %>% 
+  mutate(is_outlier = case_when(response_time > cutoff_value_high ~ 1L,
+                                response_time < cutoff_value_low ~ 2L,
+                                TRUE ~ 0L),
+         response_time = case_when(is_outlier == 1L ~ cutoff_value_high,
+                                   is_outlier == 2L ~ cutoff_value_low,
+                                   TRUE ~ response_time))
+```
+
+#### Filtering the needed trials
+
+For the analysis we keep only the Stroop trials, that were followed by a Necker cube.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_rt_data %>% 
+  filter(is_previous_necker == 1L)
+```
+
+#### Saving the dataset
+
+```{r}
+write_tsv(main_analysis_rt_data, "Data/Processed/Exp2/Kan_Processed_Exp2_Main_Rt_data.tsv")
+```
+
+```{r}
+# Clear environment
+rm(list = ls(all.names = TRUE))
+```
+
+# Exp 3
+## Read files
+
+Read datafile from the subfolder of the given experiment.
+
+```{r}
+raw <- read_tsv("Data/Raw/Exp3/Kan_Raw_Exp3_data.tsv")
+```
+
+## Selecting only needed variables
+
+Opensesame logs several variables that are not needed for the further analysis. For the sake of simplicity, we only keep the variables that are needed.
+
+```{r}
+raw <-
+  raw %>%
+  select(datetime,
+         filename,
+         lab,
+         live_row,
+         loop_num,
+         procedure,
+         conflict_condition,
+         experiment_part,
+         stim_color,
+         stim_type,
+         stimulus,
+         correct,
+         correct_response,
+         response,
+         response_time,
+         keypress,
+         score)
+```
+
+## Transforming variables
+### Variables for identification
+
+Checking the number of trials per parciticpant. Each participant should have 271 trials:
+
+```{r}
+raw %>% 
+  group_by(filename) %>% 
+  count()
+```
+
+We create a new variable called [trial_id] that records the order of the trials in each experiment part (practice, baseline, test).
+We create a unique varaible for the identification of the participants [participant_id].
+We create a varaible that mark which lab collected the data (Australia, Hungary, Singapore).
+
+```{r}
+raw <-
+  raw %>%
+  rename(trial_id = live_row)
+```
+
+Creating unique participant_id for the participants.
+
+```{r}
+raw <- 
+  raw %>%
+  mutate(participant_id = str_remove(filename, "subject-")) %>% 
+  select(participant_id, everything(), -filename)
+```
+
+There are missing values in the loopnum variable because of the way opensesame saves variables. Therefore, we fill up the missing values for each participant.
+
+```{r}
+raw <-
+  raw %>% 
+  group_by(participant_id) %>% 
+  fill(loop_num, .direction = "up") %>% 
+  ungroup()
+```
+
+### Response variables
+
+The [keypress] variable contains the number of reversals. For the sake of simplicity we rename it to reversal.
+The [score] variable contains the number of correct reversals during the incongruent trial.
+The response time in the incongruent necker trials were fixed as we measured the number of reversals in the time of 90 seconds, therefore the [response time] variable gets NA values for the incongruent neckert trials.
+By a mistake in the experimental program we did not record the correct response for the congruent necker trials during the test part of the experiment. Therefore, we add the correct response keys to the [correct_response] variable.
+For the incongruent necker trials there is no correct response, therefore the [correct] variable should be empty when for those trials.
+
+```{r}
+raw <-
+  raw %>%
+  rename(reversal = keypress) %>% 
+  mutate(reversal = case_when(procedure == "neck_inco" ~ reversal,
+                              TRUE ~ NA_real_),
+         response_time = case_when(procedure == "neck_inco" ~ NA_real_,
+                              TRUE ~ response_time),
+         correct_response = case_when(procedure == "neck_con_l" ~ "d",
+                                      procedure == "neck_con_r" ~ "f",
+                                      TRUE ~ correct_response),
+         correct = case_when(procedure == "neck_inco" ~ NA_integer_,
+                             response == correct_response ~ 1L,
+                             response != correct_response ~ 0L),
+         score = case_when(procedure == "neck_inco" ~ score,
+                           TRUE ~ NA_real_))
+```
+
+### Filtering test variables
+
+We only keep the test trials for the further analysis.
+
+```{r}
+test_raw <-
+  raw %>%
+  filter(experiment_part == "test")
+```
+
+The number of trials per participant:
+
+```{r}
+test_raw %>% 
+  group_by(participant_id) %>% 
+  count()
+```
+
+## Creating a dataset for the main analysis
+
+We keep only the stroop trials where the previous trial was a necker trial.
+
+```{r}
+main_analysis_data <-
+  test_raw %>% 
+  select(participant_id,
+         lab,
+         loop_num,
+         trial_id,
+         procedure,
+         conflict_condition,
+         stim_type,
+         stimulus,
+         stim_color,
+         correct,
+         response_time,
+         reversal,
+         score) %>% 
+  mutate(is_previous_necker = case_when(procedure == "stroop" & lag(procedure) %in% c("neck_con_r", "neck_con_l", "neck_inco") & conflict_condition != "first_trial" ~ 1L,
+                                        TRUE ~ 0L))
+```
+
+The number of test trials per conflict condition:
+
+```{r}
+main_analysis_data %>% 
+  filter(is_previous_necker == 1L) %>% 
+  group_by(conflict_condition) %>% 
+  count()
+```
+
+We create the variables needed for the main analysis.
+
+```{r}
+main_analysis_data <-
+  main_analysis_data %>% 
+  mutate(is_previous_congruent = case_when(is_previous_necker == 1L ~ lag(stim_type),
+                                         TRUE ~ NA_character_),
+         is_previous_congruent = case_when(is_previous_congruent == "congruent" ~ 1L,
+                                           is_previous_congruent == "incongruent" ~ 0L,
+                                            TRUE ~ NA_integer_),
+         is_congruent = case_when(is_previous_necker == 1L & stim_type == "congruent" ~ 1L,
+                                  is_previous_necker == 1L & stim_type == "incongruent" ~ 0L,
+                                  TRUE ~ NA_integer_),
+         is_previous_correct = case_when(is_previous_necker == 1L & lag(procedure) %in% c("neck_con_r", "neck_con_l") ~ lag(correct),
+                                         is_previous_necker == 1L & lag(procedure) ==  "neck_inco" ~ NA_integer_,
+                                         TRUE ~ NA_integer_)) %>% 
+  rename(is_correct = correct)
+```
+
+## Excluding participants comprehension probe
+
+We excluded the data of participants whose performance was below 70% on accurately identifying whether or not a stimulus change occurred on the current trial.
+
+```{r}
+comprehension_probe_data <-
+  main_analysis_data %>% 
+  filter(procedure == "neck_inco") %>%
+  mutate(acc = score / 28 * 100) %>%
+  group_by(participant_id) %>% 
+  summarise(mean_acc = mean(acc)) %>% 
+  mutate(drop_comprehension = case_when(mean_acc < 70 ~ 1L,
+                                        mean_acc > 70 ~ 0L))
+```
+
+The descriptive statistics of all accuracy on the incongruent trials:
+
+```{r}
+comprehension_probe_data %>% 
+  ungroup() %>% 
+  summarize(all_mean_acc = mean(mean_acc),
+            all_sd_acc = sd(mean_acc))
+```
+
+Excluding participants who has accuracy lower than 70% from the whole dataset.
+
+```{r}
+main_analysis_data <- 
+  main_analysis_data %>% 
+  left_join(., comprehension_probe_data, by = "participant_id") %>% 
+  filter(drop_comprehension == 0L)
+```
+
+### Creating accuracy analysis data
+
+```{r}
+main_analysis_acc_data <- 
+  main_analysis_data
+```
+
+#### Filtering the needed trials
+
+For the analysis we keep only the Stroop trials, that were followed by a Necker cube.
+
+```{r}
+main_analysis_acc_data <-
+  main_analysis_acc_data %>% 
+  filter(is_previous_necker == 1L)
+```
+
+#### Dropping not needed variables
+
+```{r}
+main_analysis_acc_data <-
+  main_analysis_acc_data %>% 
+  select(-is_previous_necker,
+         -reversal,
+         -score,
+         -drop_comprehension)
+```
+
+#### Saving the dataset
+
+```{r}
+write_tsv(main_analysis_acc_data, "Data/Processed/Exp3/Kan_Processed_Exp3_Main_Acc_data.tsv")
+```
+
+### Creating reaction time analysis data
+
+```{r}
+main_analysis_rt_data <- 
+  main_analysis_data
+```
+
+#### Keeping only correct trials
+
+For the reaction time analysis we keep only the correct Stroop trials.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_rt_data %>% 
+  filter(is_correct == 1L)
+```
+
+#### Filtering the needed trials
+
+For the analysis we keep only the Stroop trials, that were followed by a Necker cube.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_rt_data %>% 
+  filter(is_previous_necker == 1L)
+```
+
+#### Excluding participants who has a condition with no data
+
+The number of conditions per participant. Because we excluded the incorrect trials, it can happen that a participant does no have reeaction time responses from all the 4 conditions.
+
+```{r}
+missing_condition <-
+  main_analysis_rt_data %>% 
+  group_by(participant_id, is_congruent, is_previous_congruent) %>% 
+  count() %>% 
+  group_by(participant_id) %>%
+  count() %>% 
+  filter(n != 4) %>%
+  select(participant_id) %>% 
+  ungroup()
+```
+
+Excluding these participants from further analysis.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_rt_data %>%
+  anti_join(., missing_condition, by = "participant_id")
+```
+
+The number of participants who has missing conditions:
+
+```{r}
+count(missing_condition)
+```
+
+#### Replacing outliers with a cutoff value
+
+To mitigate the influence of outliers, we replaced the raw sentence reading times of those trials that are 2.5 SD s above the participant`s mean sentence reading time across all the sentence types with the 2.5 SD cutoff value of the participant.
+
+```{r}
+stroop_outliers <-
+  main_analysis_rt_data %>% 
+  group_by(participant_id) %>% 
+  summarize(mean_rt = mean(response_time, na.rm =T),
+            sd_rt = sd(response_time, na.rm = T),
+            cutoff_value_high = mean_rt + 2.5 * sd_rt,
+            cutoff_value_low = mean_rt - 2.5 * sd_rt)
+```
+
+We join the calculated cutoff values with the full dataset and replace the outlier response times with the cutoff values.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_rt_data %>% 
+  left_join(., stroop_outliers, by = "participant_id") %>% 
+  mutate(is_outlier = case_when(response_time > cutoff_value_high ~ 1L,
+                                response_time < cutoff_value_low ~ 2L,
+                                TRUE ~ 0L),
+         response_time = case_when(is_outlier == 1L ~ cutoff_value_high,
+                                   is_outlier == 2L ~ cutoff_value_low,
+                                   TRUE ~ response_time))
+```
+
+#### Saving the dataset
+
+```{r}
+write_tsv(main_analysis_rt_data, "Data/Processed/Exp3/Kan_Processed_Exp3_Main_Rt_data.tsv")
+```

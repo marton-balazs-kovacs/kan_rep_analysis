@@ -1,0 +1,527 @@
+---
+title: "Kan_Raw_Processed"
+author: "Marton Kovacs"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output: html_document
+---
+
+# Load packages
+
+```{r}
+library(tidyverse)
+library(osfr)
+library(readxl)
+```
+
+# Load custom functions
+
+```{r}
+source("utils.R")
+```
+
+# Download data from OSF
+## OSF auth (until project is public)
+
+Read/write token should be created on OSF and it should be named as "osf_token_write"
+
+```{r osf authentication}
+osf_auth(token = read_lines(list.files(pattern ="osf_token_write_.*.txt")))
+```
+
+## Connect to data OSF folder
+```{r osf connect to OSF folder, message = FALSE}
+data_guid <- ""
+
+kan_project <- osf_retrieve_node(data_guid)
+```
+
+## Download data locally
+
+```{r osf download data, message = FALSE, echo = T, results = "hide"}
+# Save data path in the project repository
+local_data_pth <- file.path("Data","Raw")
+
+# Create local data structure if it is missing
+create_local_structure(local_data_pth)
+
+# TODO: Rewrite this part if there are data uploaded
+# List datafiles on OSF
+data_files <- 
+  kan_project %>% 
+  osf_ls_files() %>% 
+  filter(name == "Processed") %>% 
+  osf_ls_files() 
+
+data_files %>% 
+  group_by(name) %>% # for each experiment type
+  do(download_files(.,local_data_pth))
+
+# uncomment following line to remove the data   
+# remove_local_data(local_data_pth)
+```
+
+# Exp 1
+## Read files
+
+Read datafile from the subfolder of the given experiment.
+
+```{r}
+raw <- read_tsv("Data/Raw/Exp1/Kan_Raw_Exp1_data.tsv")
+```
+
+## Selecting only needed variables
+
+Opensesame logs several variables that are not needed for further analysis. For the sake of simplicity, we only keep the variables that are needed.
+
+```{r}
+raw <-
+  raw %>%
+  select(filename,
+         lab,
+         count_trial_decider,
+         live_row,
+         live_row_practice_loop,
+         procedure,
+         stim_type,
+         stimulus,
+         stim_color,
+         conflict_condition,
+         correct,
+         correct_response,
+         correct_stroop_input,
+         critical_area,
+         datetime,
+         response,
+         response_stroop_input,
+         response_keyboard_input,
+         response_keyboard_input_1,
+         response_keyboard_input_2,
+         response_keyboard_input_3,
+         response_time,
+         response_time_stroop_input,
+         response_time_keyboard_input,
+         response_time_keyboard_input_1,
+         response_time_keyboard_input_2,
+         response_time_keyboard_input_3,
+         count_end_sent_logger,
+         count_sentence,
+         count_start_sentence,
+         count_stroop_input,
+         count_stroop_sequence,
+         acc,
+         avg_rt)
+```
+
+## Dividing parts of the experiment into different tables
+### Practice trials
+
+```{r}
+practice_raw <-
+  raw %>%
+  filter(is.na(procedure) & is.na(stim_type))
+```
+
+### Baseline stroop trials
+
+```{r}
+baseline_raw <-
+  raw %>% 
+  filter(is.na(procedure) & !is.na(stim_type))
+```
+
+### Practice with Stroops and sentences trials
+
+```{r}
+practice_sent_stroop_raw <-
+  raw %>% 
+  filter(!is.na(procedure) & is.na(count_trial_decider))
+```
+
+### Test trials
+
+```{r}
+test_raw <- 
+  raw %>% 
+  filter(!is.na(count_trial_decider)) %>% 
+  select(-count_trial_decider,
+         -live_row_practice_loop,
+         -acc,
+         -avg_rt,
+         -contains("count_"),
+         -correct_stroop_input)
+```
+
+## Read specification of the stimuli for the test trials
+
+```{r}
+test_trial_spec <- read_xlsx("exp1_test_trial_spec.xlsx", sheet = 1)
+```
+
+## Creating variables for the ets trials
+
+```{r}
+test_raw <-
+  test_raw %>% 
+  rename(trial_id = live_row,
+         participant_id = File) %>% 
+  mutate(response_keyboard_input_3 = case_when(trial_id %in% (test_trial_spec$trial_id + 1) ~ response_keyboard_input_3,
+                                               TRUE ~ NA_character_),
+         response_time_keyboard_input_3 = case_when(!is.na(response_keyboard_input_3) ~ response_time_keyboard_input_3,
+                                                    TRUE ~ NA_integer_))
+
+setdiff(
+test_raw %>% 
+  filter(!is.na(response_keyboard_input_3)) %>% 
+  pull(trial_id),
+test_trial_spec %>% 
+  mutate(trial_id = trial_id + 1) %>% 
+  pull(trial_id)
+)
+
+sentence_last_word_responses <-
+  test_raw %>% 
+  select(trial_id,
+         participant_id,
+         Subdirectory,
+         response_keyboard_input_3,
+         response_time_keyboard_input_3) %>% 
+  mutate(response = response_keyboard_input_3,
+         response_time = response_time_keyboard_input_3) %>% 
+  select(-response_keyboard_input_3, -response_time_keyboard_input_3) %>% 
+  drop_na(response) %>% 
+  mutate(trial_id = trial_id - 1) %>% 
+  left_join(., test_trial_spec, by = "trial_id")
+
+test_raw <- 
+  test_raw %>% 
+  bind_rows(sentence_last_word_responses) %>% 
+  arrange(participant_id, trial_id) %>%
+  mutate(correct = as.integer(correct),
+         correct = case_when(is.na(correct) & response == correct_response ~ 1L,
+                             is.na(correct) & response != correct_response ~ 0L,
+                             TRUE ~ correct))
+```
+
+## Exploratory data analysis
+### Number of practice and test trials per participant before exclusion
+
+```{r}
+raw %>%
+  mutate(test_trial = case_when(test_trial == 0L ~ "practice trial",
+                                test_trial == 1L ~ "test trial",
+                                TRUE ~ NA_character_)) %>% 
+  group_by(subject_nr, test_trial) %>%
+  count()
+```
+
+## Testing the consistency of the data
+
+Should we test whether all of the experiments were run on full screen?
+the same for opensesame version
+
+The four digit code in the filename that is saved in the [filename] variable should match the content of the [subject_nr] variable.
+
+```{r}
+
+```
+
+# Exp 2
+## Read files
+
+Read datafile from the subfolder of the given experiment.
+
+```{r}
+raw <- read_tsv("Data/Raw/Exp2/Kan_Raw_Exp2_data.tsv")
+```
+
+## Selecting only needed variables
+
+Opensesame logs several variables that are not needed for the further analysis. For the sake of simplicity, we only keep the variables that are needed.
+
+```{r}
+raw <-
+  raw %>%
+  select(live_row,
+         live_row_practice_loop2,
+         loop_num,
+         count_Blank,
+         count_Stimulus,
+         count_decider,
+         count_down_neck_stim,
+         count_up_neck_stim,
+         count_inco_neck_exp2_script,
+         count_incongruent_necker,
+         count_keyboard_input,
+         count_necker_keyboard_input,
+         count_left_necker,
+         count_right_necker,
+         count_neck_logger,
+         count_stroop_sequence,
+         count_stroop_logger,
+         procedure,
+         conflict_condition,
+         stim_color,
+         stim_type,
+         stimulus,
+         correct,
+         correct_response,
+         response,
+         response_keyboard_input,
+         response_necker_keyboard_input,
+         response_time_keyboard_input,
+         response_time_necker_keyboard_input,
+         response_time,
+         keypress,
+         time_trial_loops,
+         time_Blank,
+         time_Fixation,
+         time_BaselineLoop,
+         time_Stimulus,
+         time_decider,
+         time_down_neck_stim,
+         time_inco_neck_exp2_script,
+         time_incongruent_necker,
+         time_keyboard_input,
+         time_left_necker,
+         time_neck_logger,
+         time_necker_keyboard_input,
+         time_practice_loop2,
+         time_right_necker,
+         time_stroop_logger,
+         time_stroop_sequence,
+         time_up_neck_stim,
+         time_down_neck_stim,
+         time_Instructions_1,
+         time_Instructions_2,
+         time_Instructions_3,
+         time_Instructions_4,
+         time_Instructions_5,
+         time_Instructions_6,
+         time_Instructions_7,
+         acc,
+         avg_rt,
+         datetime,
+         File,
+         Subdirectory)
+```
+
+## Divide the datatable according to experiment parts
+### Practice trials
+
+```{r}
+# Read practice trial specifications
+prac_trial_spec <- read_csv2("practice_trial_spec.csv")
+
+# Practice trials
+raw_practice <- 
+  raw %>%
+  mutate(trial_id = live_row_practice_loop2,
+         participant_id = str_remove_all(File, ".*/|.csv")) %>% 
+  group_by(participant_id, trial_id) %>% 
+  mutate(trial_id_nr_instances = row_number()) %>% 
+  ungroup() %>% 
+  filter(trial_id_nr_instances == 1) %>% 
+  select(trial_id,
+         participant_id,
+         Subdirectory,
+         procedure,
+         conflict_condition,
+         stim_color,
+         stim_type,
+         stimulus,
+         correct,
+         correct_response,
+         response,
+         keypress,
+         response_keyboard_input,
+         response_necker_keyboard_input,
+         response_time_necker_keyboard_input,
+         response_time) %>% 
+  mutate(conflict_condition = case_when(is.na(conflict_condition) ~ "IC",
+                                        TRUE ~ conflict_condition),
+         stim_color = case_when(procedure == "neck_con_r" ~ "black",
+                                TRUE ~ stim_color),
+         stimulus = case_when(procedure == "neck_con_r" ~ NA_character_,
+                                TRUE ~ stimulus),
+         correct_response = case_when(procedure == "neck_con_r" ~ "f",
+                                TRUE ~ correct_response),
+         response = case_when(procedure == "neck_con_r" ~ response_necker_keyboard_input,
+                                TRUE ~ response),
+         correct = case_when(procedure == "neck_con_r" & response == correct_response ~ 1,
+                             procedure == "neck_con_r" & response != correct_response ~ 0,
+                             TRUE ~ correct),
+         response_necker_keyboard_input = case_when(trial_id == 3 ~ response_necker_keyboard_input,
+                                                    trial_id == 7 ~ response_necker_keyboard_input,
+                                                    trial_id == 11 ~ response_necker_keyboard_input,
+                                                    TRUE ~ NA_character_),
+         response_time_necker_keyboard_input = case_when(!is.na(response_necker_keyboard_input) ~ response_time_necker_keyboard_input,
+                                                         TRUE ~ NA_real_))
+
+cong_necker_trial_responses <-
+  raw_practice %>% 
+  select(trial_id,
+         participant_id,
+         Subdirectory,
+         response_necker_keyboard_input,
+         response_time_necker_keyboard_input) %>% 
+  mutate(response = response_necker_keyboard_input,
+         response_time = response_time_necker_keyboard_input) %>% 
+  select(-response_necker_keyboard_input, -response_time_necker_keyboard_input) %>% 
+  drop_na(response) %>% 
+  mutate(trial_id = trial_id - 1) %>% 
+  left_join(., prac_trial_spec, by = "trial_id")
+
+raw_practice <- 
+  raw_practice %>% 
+  bind_rows(cong_necker_trial_responses) %>% 
+  arrange(participant_id, trial_id) %>% 
+  mutate(correct = case_when(is.na(correct) & response == correct_response ~ 1,
+                             is.na(correct) & response != correct_response ~ 0,
+                             TRUE ~ correct))
+
+raw_practice %>% 
+  filter(procedure %in% c("neck_con_r", "neck_con_l")) %>% 
+  group_by(participant_id) %>% 
+  summarise(sum_correct = sum(correct),
+            acc = sum_correct / 4 * 100) %>% 
+  group_by(acc) %>% 
+  count()
+```
+
+### Stroop baseline
+
+```{r}
+raw_baseline <-
+  raw %>%
+  filter(procedure == "neck_con_r") %>% 
+  select(File,
+         procedure,
+         conflict_condition,
+         stim_color,
+         stim_type,
+         stimulus,
+         correct,
+         correct_response,
+         response,
+         response_time)
+```
+
+```{r}
+raw_baseline_accuracy <- 
+  raw_baseline %>% 
+  group_by(File, correct) %>% 
+  summarise(N = n()) %>% 
+  group_by(File) %>% 
+  mutate(sum_N = sum(N),
+         freq = N / sum_N * 100) %>% 
+  ungroup()
+```
+
+```{r}
+raw_baseline_accuracy %>% 
+  filter(correct == 0) %>% 
+  ggplot() +
+  aes(x = N) +
+  geom_bar() +
+  scale_x_continuous(limits = c(0, 55),
+                     breaks = c(0, 10, 20, 30, 40, 54),
+                     labels = c(0, 10, 20, 30, 40, 54))
+```
+
+```{r}
+raw_baseline_accuracy %>% 
+  filter(correct == 0,
+         freq >= 30) %>%
+  count()
+```
+
+### Test trials 
+
+```{r}
+# Read practice trial specifications
+test_trial_spec_loop_0 <- read_xlsx("test_trial_spec_loop_0.xlsx", sheet = 1)
+test_trial_spec_loop_1 <- read_xlsx("test_trial_spec_loop_1.xlsx", sheet = 1)
+test_trial_spec_loop_2 <- read_xlsx("test_trial_spec_loop_2.xlsx", sheet = 1)
+test_trial_spec_loop_3 <- read_xlsx("test_trial_spec_loop_3.xlsx", sheet = 1)
+test_trial_spec_loop_4 <- read_xlsx("test_trial_spec_loop_4.xlsx", sheet = 1)
+test_trial_spec_loop_5 <- read_xlsx("test_trial_spec_loop_5.xlsx", sheet = 1)
+
+# Practice trials
+raw_test <- 
+  raw %>%
+  mutate(trial_id = live_row,
+         participant_id = str_remove_all(File, ".*/|.csv")) %>% 
+  filter(!is.na(loop_num)) %>% 
+  select(trial_id,
+         participant_id,
+         Subdirectory,
+         loop_num,
+         procedure,
+         conflict_condition,
+         stim_color,
+         stim_type,
+         stimulus,
+         correct,
+         correct_response,
+         response,
+         keypress,
+         response_keyboard_input,
+         response_necker_keyboard_input,
+         response_time_necker_keyboard_input,
+         response_time) %>% 
+  mutate(conflict_condition = case_when(is.na(conflict_condition) ~ "first_trial",
+                                        TRUE ~ conflict_condition),
+         stim_color = case_when(procedure == "neck_con_r" ~ "black",
+                                TRUE ~ stim_color),
+         stimulus = case_when(procedure == "neck_con_r" ~ NA_character_,
+                                TRUE ~ stimulus),
+         correct_response = case_when(procedure == "neck_con_r" ~ "f",
+                                TRUE ~ correct_response),
+         response = case_when(procedure == "neck_con_r" ~ response_necker_keyboard_input,
+                                TRUE ~ response),
+         correct = case_when(procedure == "neck_con_r" & response == correct_response ~ 1,
+                             procedure == "neck_con_r" & response != correct_response ~ 0,
+                             TRUE ~ correct),
+         response_necker_keyboard_input = case_when(trial_id == 3 ~ response_necker_keyboard_input,
+                                                    trial_id == 7 ~ response_necker_keyboard_input,
+                                                    trial_id == 11 ~ response_necker_keyboard_input,
+                                                    TRUE ~ NA_character_),
+         response_time_necker_keyboard_input = case_when(!is.na(response_necker_keyboard_input) ~ response_time_necker_keyboard_input,
+                                                         TRUE ~ NA_real_))
+
+cong_necker_trial_responses <-
+  raw_practice %>% 
+  select(trial_id,
+         participant_id,
+         Subdirectory,
+         response_necker_keyboard_input,
+         response_time_necker_keyboard_input) %>% 
+  mutate(response = response_necker_keyboard_input,
+         response_time = response_time_necker_keyboard_input) %>% 
+  select(-response_necker_keyboard_input, -response_time_necker_keyboard_input) %>% 
+  drop_na(response) %>% 
+  mutate(trial_id = trial_id - 1) %>% 
+  left_join(., prac_trial_spec, by = "trial_id")
+
+raw_practice <- 
+  raw_practice %>% 
+  bind_rows(cong_necker_trial_responses) %>% 
+  arrange(participant_id, trial_id) %>% 
+  mutate(correct = case_when(is.na(correct) & response == correct_response ~ 1,
+                             is.na(correct) & response != correct_response ~ 0,
+                             TRUE ~ correct))
+
+raw_practice %>% 
+  filter(procedure %in% c("neck_con_r", "neck_con_l")) %>% 
+  group_by(participant_id) %>% 
+  summarise(sum_correct = sum(correct),
+            acc = sum_correct / 4 * 100)
+```
+
+```{r}
+# raw <-
+#   raw %>% 
+#   mutate(experiment_part = case_when(procedure == "neck_con_r" ~ "baseline_loop",),
+#          procedure = case_when(procedure == "neck_con_r" ~ "stroop",
+#                                TRUE ~ procedure))
+```
