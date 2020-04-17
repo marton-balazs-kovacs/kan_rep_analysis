@@ -464,25 +464,21 @@ Bf(sd = interaction_se,
 outcome_neutral_sentence_data <- read_tsv("Data/Processed/Exp1/Kan_Processed_Exp1_OutcomeNeutral_Sentence_data.tsv")
 ```
 
-###
+### TODO: finish?
 
 ```{r}
 
 ```
 
+***
 
-
-
-
-
-
-# Exp2
+# Exp 2
 ## Reaction time analysis
 ### Import data
 
 ```{r}
 main_analysis_rt_data <-
-  read_tsv("Data/Processed/Exp2/Kan_Processed_Exp2_Main_Rt_data.tsv")
+  read_tsv("Data/Processed/Exp2/Kan_Processed_Exp2_Main_Rt_Conf_data.tsv")
 ```
 
 ### Exploratory data analysis
@@ -497,8 +493,8 @@ main_analysis_rt_data %>%
 
 ### Figures
 
-The congruency sequency effect for the reaction time responses.
-### TODO: Redo the figurein a multilevel way
+The congruency sequency effect for the reaction time responses with reversal groups.
+
 ```{r}
 main_analysis_rt_data %>% 
   mutate(is_previous_congruent = case_when(is_previous_congruent ==  0L ~ "Incongruent",
@@ -507,11 +503,13 @@ main_analysis_rt_data %>%
                                   is_congruent ==  1L ~ "Congruent"),
          reversal_group = case_when(reversal_group == "low" ~ "Low reversal group",
                                     reversal_group == "high" ~ "High reversal group")) %>%
+  group_by(participant_id, reversal_group, is_previous_congruent, is_congruent) %>% 
+  summarise(par_mean_rt = mean(response_time, na.rm = T)) %>% 
   group_by(is_previous_congruent, is_congruent, reversal_group) %>% 
   summarise(N = n(),
-            mean_rt = mean(response_time, na.rm = T),
-            sd_rt = sd(response_time, na.rm = T),
-            se_rt = sd_rt / sqrt(N)) %>% 
+            mean_rt = mean(par_mean_rt, na.rm = T),
+            sd_rt = sd(par_mean_rt, na.rm = T),
+            se_rt = sd_rt / sqrt(N)) %>%
   ggplot() +
   aes(x = is_previous_congruent,
       y = mean_rt,
@@ -539,7 +537,50 @@ main_analysis_rt_data %>%
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp2_Congruency_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp2_Cse_Rev_Plot.png", width = 14.4, height = 8, plot = last_plot())
+```
+
+The congruency sequency effect for the reaction time responses.
+
+```{r}
+main_analysis_rt_data %>% 
+  mutate(is_previous_congruent = case_when(is_previous_congruent ==  0L ~ "Incongruent",
+                                           is_previous_congruent ==  1L ~ "Congruent"),
+         is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
+                                  is_congruent ==  1L ~ "Congruent")) %>%
+  group_by(participant_id, is_previous_congruent, is_congruent) %>% 
+  summarise(par_mean_rt = mean(response_time, na.rm = T)) %>% 
+  group_by(is_previous_congruent, is_congruent) %>% 
+  summarise(N = n(),
+            mean_rt = mean(par_mean_rt, na.rm = T),
+            sd_rt = sd(par_mean_rt, na.rm = T),
+            se_rt = sd_rt / sqrt(N)) %>%
+  ggplot() +
+  aes(x = is_previous_congruent,
+      y = mean_rt,
+      shape = is_congruent,
+      group = is_congruent) +
+  geom_path() +
+  geom_point(size = 6) +
+  geom_errorbar(aes(ymin = mean_rt - se_rt,
+                    ymax = mean_rt + se_rt),
+                width = .1) +
+  guides(color = FALSE) +
+  xlab("Congruency of the previous trial")+
+  ylab("Reaction time") +
+  guides(shape = guide_legend(title = "Congruency of \n the current trial")) +
+  theme_minimal() +
+  theme(axis.title = element_text(size = 25),
+        axis.text = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        strip.text.x = element_text(size = 20))
+```
+
+Saving the figure.
+
+```{r}
+ggsave("Figures/Kan_Exp2_Cse_Plot.png", width = 14.4, height = 8, plot = last_plot())
 ```
 
 ### Crucial tests
@@ -566,7 +607,7 @@ main_analysis_rt_aggregate <-
            reversal_group = as.factor(reversal_group))
 ```
 
-
+The number of participants per reversal group.
 
 ```{r}
 main_analysis_rt_aggregate %>% 
@@ -574,23 +615,29 @@ main_analysis_rt_aggregate %>%
   count()
 ```
 
+The number of participants for the rt analysis.
+
 ```{r}
 main_analysis_rt_aggregate %>% 
   distinct(participant_id) %>% 
   count()
 ```
 
-
+We are running the ANOVA.
 
 ```{r}
 anova_rt <-
   ezANOVA(data = main_analysis_rt_aggregate, dv = rt_conditional_mean, wid = participant_id, within = .(is_congruent, is_previous_congruent), between = reversal_group, type = 3)
 ```
 
+Transfroming the results of the ANOVA to a datatable.
+
 ```{r}
 anova_rt <-
   as_tibble(anova_rt$ANOVA)
 ```
+
+Extracting the F value and df from the ANOVA.
 
 ```{r}
 anova_rt_f_value <-
@@ -605,6 +652,8 @@ anova_rt_f_value <-
             df = DFd)
 ```
 
+Calculating the raw effects per participant.
+
 ```{r}
 main_analysis_rt_participant_level_raw_effect <-
   main_analysis_rt_aggregate %>% 
@@ -617,12 +666,14 @@ main_analysis_rt_participant_level_raw_effect <-
   select(-is_previous_congruent, -is_congruent) %>% 
   spread(key = condition, value = rt_conditional_mean) %>% 
   mutate(congruency_effect = ((ci + ii) / 2) - ((cc + ic) / 2),
-         previous_congruency_effect = ((ci + cc) / 2) - ((ii + ic) / 2),
+         previous_congruency_effect = ((ii + ic) / 2) - ((ci + cc) / 2),
          interaction_effect = (ci - cc) - (ii - ic),
          prev_cong = ci - cc,
          prev_incon = ii - ic,
-         current_incongruent = ii - ci)
+         current_incongruent = ci - ii)
 ```
+
+We are calculating the mean raw effect sizes.
 
 ```{r}
 main_analysis_rt_raw_effect <-
@@ -637,6 +688,8 @@ main_analysis_rt_raw_effect <-
   spread(key = "reversal_group", value = "raw_effect")
 ```
 
+We are extracting the low raw effect sizes from the high raw effect sizes according to the hypothesis.
+
 ```{r}
 main_analysis_rt_raw_effect <-
   main_analysis_rt_raw_effect %>% 
@@ -646,11 +699,15 @@ main_analysis_rt_raw_effect <-
          -low)
 ```
 
+We are joining the F values and dfs with the raw effect sizes.
+
 ```{r}
 main_analysis_rt_raw_effect <-
   main_analysis_rt_raw_effect %>%
   inner_join(., anova_rt_f_value, by = "term")
 ```
+
+We are calculating the se from the raw effect size and f value.
 
 ```{r}
 main_analysis_rt_raw_effect <-
@@ -658,39 +715,81 @@ main_analysis_rt_raw_effect <-
   mutate(se = abs(raw_effect / sqrt(f_value)))
 ```
 
+Assignig variables to calculate bayes factor.
+
 ```{r}
-Bf(sd = as.numeric(main_analysis_rt_raw_effect[1, 5]),
-   obtained = as.numeric(main_analysis_rt_raw_effect[1, 2]),
-   dfdata = as.numeric(main_analysis_rt_raw_effect[1, 4]),
+# sd
+rt_sd <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "interaction_effect") %>% 
+  pull(se)
+
+# obtained
+rt_obtained <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "interaction_effect") %>% 
+  pull(raw_effect)
+
+# df
+rt_df <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "interaction_effect") %>% 
+  pull(df)
+```
+
+Running the Bf analysis.
+
+```{r}
+Bf(sd = rt_sd,
+   obtained = rt_obtained,
+   dfdata = rt_df,
    meanoftheory = 0,
    sdtheory = 30,
    dftheory = 10^10,
    tail = 1)
 ```
 
-```{r}
-(ci -cc) - (ii-ic)
-(ci + ii / 2) - (cc + ic / 2)
-```
-
 ### Correlation
 
+We are calculating the correlation between the mean number of reversals per participant and the size of the conflict adaptation operationalized by the current incongruent difference.
+
+First we create a dataset for the comparison.
+
 ```{r}
-main_analysis_rt_participant_level_raw_effect %>% 
+main_analysis_rt_cor_data <-
+  main_analysis_rt_data %>% 
+  group_by(participant_id, is_congruent, is_previous_congruent, reversal_group, mean_reversal) %>% 
+  summarise(rt_conditional_mean = mean(response_time, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(condition = case_when(is_previous_congruent == 0L & is_congruent == 0L ~ "ii",
+                               is_previous_congruent == 0L & is_congruent == 1L ~ "ic",
+                               is_previous_congruent == 1L & is_congruent == 0L ~ "ci",
+                               is_previous_congruent == 1L & is_congruent == 1L ~ "cc",
+                               TRUE ~ NA_character_)) %>% 
+  select(-is_previous_congruent, -is_congruent) %>% 
+  spread(key = condition, value = rt_conditional_mean) %>% 
+  mutate(current_incongruent = ci - ii) %>% 
   select(participant_id,
          current_incongruent,
          mean_reversal,
-         reversal_group) %>% 
+         reversal_group)
+```
+
+We are visualizing the comparison on a figure.
+
+```{r}
+main_analysis_rt_cor_data %>%  
   mutate(reversal_group = case_when(reversal_group == "low" ~ "Low reversal group",
                                     reversal_group == "high" ~ "High reversal group")) %>% 
   ggplot() +
   aes(x = mean_reversal,
       y = current_incongruent,
       fill = reversal_group) +
-  geom_jitter(colour="black", pch=21, size = 3) +
+  geom_jitter(colour = "black", pch = 21, size = 3) +
   guides(shape = guide_legend(title = "Reversal group")) +
   labs(x = "The mean number of reversals",
-       y = "The interaction effect in milliseconds") +
+       y = "The conflict adaptation effect (II - CI) in milliseconds",
+       fill = "Reversel group") +
   theme_minimal() +
   theme(axis.title = element_text(size = 20),
         axis.text = element_text(size = 15),
@@ -699,33 +798,16 @@ main_analysis_rt_participant_level_raw_effect %>%
         legend.position = c(.9, .3))
 ```
 
-```{r}
-main_analysis_rt_participant_level_raw_effect %>% 
-  select(participant_id,
-         current_incongruent,
-         mean_reversal,
-         reversal_group) %>% 
-  mutate(reversal_group = case_when(reversal_group == "low" ~ "Low reversal group",
-                                    reversal_group == "high" ~ "High reversal group")) %>% 
-  filter(reversal_group == "Low reversal group") %>% 
-  ggplot() +
-  aes(x = mean_reversal,
-      y = current_incongruent) +
-  geom_jitter(size = 5, alpha = 0.8) +
-  labs(x = "The mean number of reversals",
-       y = "The interaction effect in milliseconds") +
-  theme_minimal() +
-  theme(axis.title = element_text(size = 20),
-        axis.text = element_text(size = 15))
-```
+Running the correlation.
 
 ```{r}
-cor.test(main_analysis_rt_participant_level_raw_effect$current_incongruent,
-         main_analysis_rt_participant_level_raw_effect$mean_reversal,
+cor.test(main_analysis_rt_cor_data$current_incongruent,
+         main_analysis_rt_cor_data$mean_reversal,
          method = "pearson")
 ```
 
 ## Accuracy analysis
+### Importing data
 
 ```{r}
 main_analysis_acc <- read_tsv("Data/Processed/Exp2/Kan_Processed_Exp2_Main_Acc_data.tsv")
@@ -733,8 +815,16 @@ main_analysis_acc <- read_tsv("Data/Processed/Exp2/Kan_Processed_Exp2_Main_Acc_d
 
 ### Exploratory data analysis
 
-The number and frequency of correct trials:
-## TODO: REDO
+The number of trials per participant.
+
+```{r}
+main_analysis_acc %>% 
+  group_by(participant_id) %>% 
+  count()
+```
+
+The number and frequency of correct trials. There are different number of trials per participant because each participant was assigned to a different set of trails (out of 6) randomly. These sets contained different number  of test trials that satisfy the criteria to be the part of the analysis.
+
 ```{r}
 main_analysis_acc %>% 
   group_by(participant_id, is_correct) %>% 
@@ -747,6 +837,8 @@ main_analysis_acc %>%
 
 ### Figures
 
+Figure with reversal groups.
+
 ```{r}
 main_analysis_acc %>% 
   mutate(is_previous_congruent = case_when(is_previous_congruent ==  0L ~ "Incongruent",
@@ -755,11 +847,13 @@ main_analysis_acc %>%
                                   is_congruent ==  1L ~ "Congruent"),
          reversal_group = case_when(reversal_group == "low" ~ "Low reversal group",
                                     reversal_group == "high" ~ "High reversal group")) %>%
+  group_by(is_previous_congruent, is_congruent, reversal_group, participant_id) %>% 
+  summarise(par_mean_acc = mean(is_correct, na.rm = T)) %>% 
   group_by(is_previous_congruent, is_congruent, reversal_group) %>% 
   summarise(N = n(),
-            mean_acc = mean(is_correct, na.rm = T),
-            sd_acc = sd(is_correct, na.rm = T),
-            se_acc = sd_acc / sqrt(N)) %>%
+            mean_acc = mean(par_mean_acc, na.rm = T),
+            sd_acc = sd(par_mean_acc, na.rm = T),
+            se_acc = sd_acc / sqrt(N)) %>% View()
   ggplot() +
   aes(x = is_previous_congruent,
       y =  mean_acc,
@@ -787,32 +881,67 @@ main_analysis_acc %>%
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp2_Acc_Congruency_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp2_Acc_Cse_Rev_Plot.png", width = 14.4, height = 8, plot = last_plot())
 ```
 
+Figure without reversal groups.
+
 ```{r}
-reversal_group <-
-  main_analysis_acc %>% 
-  distinct(participant_id, .keep_all = T) %>% 
-  select(participant_id,
-         reversal_group)
+main_analysis_acc %>% 
+  mutate(is_previous_congruent = case_when(is_previous_congruent ==  0L ~ "Incongruent",
+                                           is_previous_congruent ==  1L ~ "Congruent"),
+         is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
+                                  is_congruent ==  1L ~ "Congruent")) %>%
+  group_by(participant_id, is_previous_congruent, is_congruent) %>% 
+  summarise(par_mean_acc = mean(is_correct, na.rm = T)) %>% 
+  group_by(is_previous_congruent, is_congruent) %>% 
+  summarise(N = n(),
+            mean_acc = mean(par_mean_acc, na.rm = T),
+            sd_acc = sd(par_mean_acc, na.rm = T),
+            se_acc = sd_acc / sqrt(N)) %>%
+  ggplot() +
+  aes(x = is_previous_congruent,
+      y =  mean_acc,
+      shape = is_congruent,
+      group = is_congruent) +
+  geom_path() +
+  geom_point(size = 4) +
+  geom_errorbar(aes(ymin = mean_acc - se_acc,
+                    ymax = mean_acc + se_acc),
+                width = .1) +
+  guides(color = FALSE) +
+  xlab("Congruency of the previous trial")+
+  ylab("Accuracy") +
+  guides(shape = guide_legend(title = "Congruency of \n the current trial")) +
+  theme_minimal() +
+  theme(axis.title = element_text(size = 20),
+        axis.text = element_text(size = 15),
+        legend.text = element_text(size = 15),
+        legend.title = element_text(size = 15),
+        strip.text.x = element_text(size = 15),
+        legend.position = c(.9, .8))
 ```
+
+Saving the figure.
+
+```{r}
+ggsave("Figures/Kan_Exp2_Acc_Cse_Plot.png", width = 14.4, height = 8, plot = last_plot())
+```
+
+### Crucial tests
+#### Data preprocessing
+
+we are calculating the conditional mean of the correct trials per particpant and per condition (CC, II, CI, IC).
 
 ```{r}
 main_analysis_acc_aggregate <-
   main_analysis_acc %>% 
-  group_by(participant_id, is_congruent, is_previous_congruent) %>% 
+  group_by(participant_id, reversal_group, is_congruent, is_previous_congruent) %>% 
   summarise(acc_conditional_mean = mean(is_correct, na.rm = T)) %>% 
   ungroup()
 ```
 
-```{r}
-main_analysis_acc_aggregate <-
-  main_analysis_acc_aggregate %>% 
-  left_join(., reversal_group, by = "participant_id")
-```
-
-The number of participants in each reversal group:
+The number of participants in each reversal group.
 
 ```{r}
 main_analysis_acc_aggregate %>% 
@@ -821,11 +950,7 @@ main_analysis_acc_aggregate %>%
   count()
 ```
 
-```{r}
-main_analysis_acc_aggregate %>% 
-  group_by(participant_id) %>% 
-  count()
-```
+Transfer independent variables used in the ANOVA to factors.
 
 ```{r}
 main_analysis_acc_aggregate <-
@@ -836,15 +961,21 @@ main_analysis_acc_aggregate <-
          reversal_group = as_factor(reversal_group))
 ```
 
+Running the mixed ANOVA.
+
 ```{r}
 anova_acc <-
   ezANOVA(data = main_analysis_acc_aggregate, dv = acc_conditional_mean, wid = participant_id, within = .(is_congruent, is_previous_congruent), between = reversal_group, type = 3)
 ```
 
+Transfroming the output of the ANOVA to a tibble.
+
 ```{r}
 anova_acc <-
   as_tibble(anova_acc$ANOVA)
 ```
+
+Extract the F valu and df2 from the ANOVA.
 
 ```{r}
 anova_acc_f_value <-
@@ -858,6 +989,8 @@ anova_acc_f_value <-
             f_value = F,
             df = DFd)
 ```
+
+We calculate the raw effects per participant.
 
 ```{r}
 main_analysis_acc_participant_level_raw_effect <-
@@ -876,6 +1009,8 @@ main_analysis_acc_participant_level_raw_effect <-
          current_incongruent = ii - ci)
 ```
 
+We summarise the participant level data for further analysis.
+
 ```{r}
 main_analysis_acc_raw_effect <-
   main_analysis_acc_participant_level_raw_effect %>% 
@@ -887,6 +1022,8 @@ main_analysis_acc_raw_effect <-
   spread(key = "reversal_group", value = "raw_effect")
 ```
 
+We calculate the differences of the effects between the low and high reversal group. We extract the high reversal group raw effect from the low reversal group effect because according to the theory the high group experienced greater conflict, therefore the CSE should be stronger there.
+
 ```{r}
 main_analysis_acc_raw_effect <-
   main_analysis_acc_raw_effect %>% 
@@ -896,11 +1033,15 @@ main_analysis_acc_raw_effect <-
          -low)
 ```
 
+We join the calculated raw effects with the F value and the df from the ANOVA.
+
 ```{r}
 main_analysis_acc_raw_effect <-
   main_analysis_acc_raw_effect %>%
   inner_join(., anova_acc_f_value, by = "term")
 ```
+
+We valvulate the SE corresponding to the raw effects.
 
 ```{r}
 main_analysis_acc_raw_effect <-
@@ -908,20 +1049,96 @@ main_analysis_acc_raw_effect <-
   mutate(se = abs(raw_effect / sqrt(f_value)))
 ```
 
-```{r}
-main_analysis_acc_raw_effect <-
-  as_tibble(main_analysis_acc_raw_effect)
-```
+Saving values needed for the Bayes factor analysis.
 
 ```{r}
-Bf(sd = as.numeric(main_analysis_acc_raw_effect[1,5]),
-   obtained = as.numeric(main_analysis_acc_raw_effect[1, 2]),
-   dfdata = as.numeric(main_analysis_acc_raw_effect[1, 4]),
+# SE
+acc_sd <-
+  main_analysis_acc_raw_effect %>% 
+  filter(term == "interaction_effect") %>% 
+  pull(se)
+
+# Raw effect
+acc_obtained <-
+  main_analysis_acc_raw_effect %>% 
+  filter(term == "interaction_effect") %>% 
+  pull(raw_effect)
+
+# Degrees of freedom
+acc_df <-
+  main_analysis_acc_raw_effect %>% 
+  filter(term == "interaction_effect") %>% 
+  pull(df)
+```
+
+Calculating the Bayes factor.
+
+```{r}
+Bf(sd = acc_sd,
+   obtained = acc_obtained,
+   dfdata = acc_df,
    meanoftheory = 0,
    sdtheory = .03,
    dftheory = 10^10,
    tail = 1)
 ```
+
+### Correlation
+
+Creating dataset for the comparison between the mean number of experienced reversals and the raw interaction effect per participant.
+
+```{r}
+main_analysis_acc_cor <-
+  main_analysis_acc %>% 
+  group_by(participant_id, is_congruent, is_previous_congruent, reversal_group, mean_reversal) %>% 
+  summarise(acc_conditional_mean = mean(is_correct, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(condition = case_when(is_previous_congruent == 0L & is_congruent == 0L ~ "ii",
+                               is_previous_congruent == 0L & is_congruent == 1L ~ "ic",
+                               is_previous_congruent == 1L & is_congruent == 0L ~ "ci",
+                               is_previous_congruent == 1L & is_congruent == 1L ~ "cc",
+                               TRUE ~ NA_character_)) %>% 
+  select(-is_previous_congruent, -is_congruent) %>% 
+  spread(key = condition, value = acc_conditional_mean) %>% 
+  mutate(current_incongruent = ci - ii) %>% 
+  select(participant_id,
+         current_incongruent,
+         mean_reversal,
+         reversal_group)
+```
+
+Cisualizing the correlation on a figure.
+
+```{r}
+main_analysis_acc_cor %>%  
+  mutate(reversal_group = case_when(reversal_group == "low" ~ "Low reversal group",
+                                    reversal_group == "high" ~ "High reversal group")) %>% 
+  ggplot() +
+  aes(x = mean_reversal,
+      y = current_incongruent,
+      fill = reversal_group) +
+  geom_jitter(colour="black", pch=21, size = 3) +
+  guides(shape = guide_legend(title = "Reversal group")) +
+  labs(x = "The mean number of reversals",
+       y = "The conflict adaptation effect (II - CI) frequency of correct trials",
+       fill = "Reversel group") +
+  theme_minimal() +
+  theme(axis.title = element_text(size = 20),
+        axis.text = element_text(size = 15),
+        legend.text = element_text(size = 15),
+        legend.title = element_text(size = 15),
+        legend.position = c(.9, .4))
+```
+
+Running the correlction test.
+
+```{r}
+cor.test(main_analysis_acc_cor$current_incongruent,
+         main_analysis_acc_cor$mean_reversal,
+         method = "pearson")
+```
+
+***
 
 # Exp3
 ## Reaction time analysis
@@ -942,6 +1159,14 @@ main_analysis_rt_data %>%
   count()
 ```
 
+The number of participants.
+
+```{r}
+main_analysis_rt_aggregate %>% 
+  distinct(participant_id) %>% 
+  count()
+```
+
 ### Figures
 
 The congruency sequency effect for the reaction time responses.
@@ -952,11 +1177,13 @@ main_analysis_rt_data %>%
                                            is_previous_congruent ==  1L ~ "Congruent"),
          is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
                                   is_congruent ==  1L ~ "Congruent")) %>%
+  group_by(participant_id, is_previous_congruent, is_congruent) %>% 
+  summarise(par_mean_rt = mean(response_time, na.rm = T)) %>% 
   group_by(is_previous_congruent, is_congruent) %>% 
   summarise(N = n(),
-            mean_rt = mean(response_time, na.rm = T),
-            sd_rt = sd(response_time, na.rm = T),
-            se_rt = sd_rt / sqrt(N)) %>% 
+            mean_rt = mean(par_mean_rt, na.rm = T),
+            sd_rt = sd(par_mean_rt, na.rm = T),
+            se_rt = sd_rt / sqrt(N)) %>%
   ggplot() +
   aes(x = is_previous_congruent,
       y = mean_rt,
@@ -966,7 +1193,7 @@ main_analysis_rt_data %>%
   geom_point(size = 6) +
   geom_errorbar(aes(ymin = mean_rt - se_rt,
                     ymax = mean_rt + se_rt),
-                width=.1) +
+                width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
   ylab("Reaction time") +
@@ -976,14 +1203,13 @@ main_analysis_rt_data %>%
         axis.text = element_text(size = 20),
         legend.text = element_text(size = 20),
         legend.title = element_text(size = 20),
-        strip.text.x = element_text(size = 20),
-        legend.position = c(.9, .3))
+        strip.text.x = element_text(size = 20))
 ```
 
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp3_Rt_Congruency_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp3_Rt_Cse_Plot.png", width = 14.4, height = 8, plot = last_plot())
 ```
 
 ### Crucial tests
@@ -1009,21 +1235,21 @@ main_analysis_rt_aggregate <-
            participant_id = as.factor(participant_id))
 ```
 
-```{r}
-main_analysis_rt_aggregate %>% 
-  distinct(participant_id) %>% 
-  count()
-```
+We are running the ANOVA.
 
 ```{r}
 anova_rt <-
   ezANOVA(data = main_analysis_rt_aggregate, dv = rt_conditional_mean, wid = participant_id, within = .(is_congruent, is_previous_congruent), type = 3)
 ```
 
+Transforming the results of the ANOVa to a datatable.
+
 ```{r}
 anova_rt <-
   as_tibble(anova_rt$ANOVA)
 ```
+
+Extracting F value and df from the ANOVA.
 
 ```{r}
 anova_rt_f_value <-
@@ -1038,6 +1264,8 @@ anova_rt_f_value <-
             df = DFd)
 ```
 
+Calculating the raw effects per participant.
+
 ```{r}
 main_analysis_rt_participant_level_raw_effect <-
   main_analysis_rt_aggregate %>% 
@@ -1050,10 +1278,14 @@ main_analysis_rt_participant_level_raw_effect <-
   select(-is_previous_congruent, -is_congruent) %>% 
   spread(key = condition, value = rt_conditional_mean) %>% 
   mutate(congruency_effect = ((ci + ii) / 2) - ((cc + ic) / 2),
-         previous_congruency_effect = ((ci + cc) / 2) - ((ii + ic) / 2),
+         previous_congruency_effect = ((ii + ic) / 2) - ((ci + cc) / 2),
          interaction_effect = (ci - cc) - (ii - ic),
-         current_incongruent = ii -ci)
+         prev_cong = ci - cc,
+         prev_incon = ii - ic,
+         current_incongruent = ci - ii)
 ```
+
+Summarizing the mean raw effects.
 
 ```{r}
 main_analysis_rt_raw_effect <-
@@ -1064,16 +1296,20 @@ main_analysis_rt_raw_effect <-
   gather(key = "term", value = "raw_effect")
 ```
 
+Joining the raw effects with the F value and df.
+
 ```{r}
 main_analysis_rt_raw_effect <-
   main_analysis_rt_raw_effect %>%
   inner_join(., anova_rt_f_value, by = "term")
 ```
 
+Calculating se.
+
 ```{r}
 main_analysis_rt_raw_effect <-
   main_analysis_rt_raw_effect %>% 
-  mutate(se = raw_effect / sqrt(f_value))
+  mutate(se = abs(raw_effect / sqrt(f_value)))
 ```
 
 #### Running the analysis
@@ -1082,28 +1318,30 @@ Saving the values needed for the analysis.
 
 ```{r}
 # Obtained sd
-interaction_se <- 
+rt_se <- 
   main_analysis_rt_raw_effect %>% 
   filter(term == "interaction_effect") %>% 
   pull(se)
 
 # Obtained effect
-interaction_effect <- 
+rt_effect <- 
   main_analysis_rt_raw_effect %>% 
   filter(term == "interaction_effect") %>% 
   pull(raw_effect)
 
 # Df
-interaction_df <- 
+rt_df <- 
   main_analysis_rt_raw_effect %>% 
   filter(term == "interaction_effect") %>% 
   pull(df)
 ```
 
+Running the Bayes factor analysis.
+
 ```{r}
-Bf(sd = interaction_se,
-   obtained = interaction_effect,
-   dfdata = interaction_df,
+Bf(sd = rt_se,
+   obtained = rt_effect,
+   dfdata = rt_df,
    meanoftheory = 0,
    sdtheory = 30,
    dftheory = 10^10,
@@ -1111,6 +1349,7 @@ Bf(sd = interaction_se,
 ```
 
 ## Accuracy analysis
+### Importing data
 
 ```{r}
 main_analysis_acc <- read_tsv("Data/Processed/Exp3/Kan_Processed_Exp3_Main_Acc_data.tsv")
@@ -1118,7 +1357,7 @@ main_analysis_acc <- read_tsv("Data/Processed/Exp3/Kan_Processed_Exp3_Main_Acc_d
 
 ### Exploratory data analysis
 
-The number and frequency of correct trials:
+The number and frequency of correct trials.
 
 ```{r}
 main_analysis_acc %>% 
@@ -1127,10 +1366,20 @@ main_analysis_acc %>%
   group_by(participant_id) %>% 
   mutate(sum_n = sum(n),
          freq = n / sum_n * 100) %>%
-  filter(is_correct == 1L)
+  filter(is_correct == 1L) %>% View()
+```
+
+The number of participants.
+
+```{r}
+main_analysis_acc %>% 
+  distinct(participant_id) %>% 
+  count()
 ```
 
 ### Figures
+
+Congruency sequence effect of accuracy.
 
 ```{r}
 main_analysis_acc %>% 
@@ -1138,10 +1387,12 @@ main_analysis_acc %>%
                                            is_previous_congruent ==  1L ~ "Congruent"),
          is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
                                   is_congruent ==  1L ~ "Congruent")) %>%
+  group_by(participant_id, is_previous_congruent, is_congruent) %>% 
+  summarise(par_mean_acc = mean(is_correct, na.rm = T)) %>% 
   group_by(is_previous_congruent, is_congruent) %>% 
   summarise(N = n(),
-            mean_acc = mean(is_correct, na.rm = T),
-            sd_acc = sd(is_correct, na.rm = T),
+            mean_acc = mean(par_mean_acc, na.rm = T),
+            sd_acc = sd(par_mean_acc, na.rm = T),
             se_acc = sd_acc / sqrt(N)) %>%
   ggplot() +
   aes(x = is_previous_congruent,
@@ -1152,7 +1403,7 @@ main_analysis_acc %>%
   geom_point(size = 4) +
   geom_errorbar(aes(ymin = mean_acc - se_acc,
                     ymax = mean_acc + se_acc),
-                width=.1) +
+                width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
   ylab("Accuracy") +
@@ -1172,6 +1423,10 @@ Saving the figure.
 ggsave("Figures/Kan_Exp3_Acc_Congruency_Plot.png", width = 14.4, height = 8, plot = last_plot())
 ```
 
+### Data preprocessing
+
+Calculating the mean accuracy for each participant in each condition.
+
 ```{r}
 main_analysis_acc_aggregate <-
   main_analysis_acc %>% 
@@ -1180,13 +1435,7 @@ main_analysis_acc_aggregate <-
   ungroup()
 ```
 
-The number of participants:
-
-```{r}
-main_analysis_acc_aggregate %>% 
-  distinct(participant_id) %>% 
-  count()
-```
+Transforming grouping variables to factors.
 
 ```{r}
 main_analysis_acc_aggregate <-
@@ -1196,15 +1445,21 @@ main_analysis_acc_aggregate <-
          participant_id = as_factor(participant_id))
 ```
 
+Running the ANOVA.
+
 ```{r}
 anova_acc <-
   ezANOVA(data = main_analysis_acc_aggregate, dv = acc_conditional_mean, wid = participant_id, within = .(is_congruent, is_previous_congruent), type = 3)
 ```
 
+Transforming the results of the ANOVA to a datatable.
+
 ```{r}
 anova_acc <-
   as_tibble(anova_acc$ANOVA)
 ```
+
+Extracting F value and df.
 
 ```{r}
 anova_acc_f_value <-
@@ -1218,6 +1473,8 @@ anova_acc_f_value <-
             f_value = F,
             df = DFd)
 ```
+
+Calculating raw effects for each participant.
 
 ```{r}
 main_analysis_acc_participant_level_raw_effect <-
@@ -1236,6 +1493,8 @@ main_analysis_acc_participant_level_raw_effect <-
          current_incongruent = ii - ci)
 ```
 
+Summarizing mean raw effects.
+
 ```{r}
 main_analysis_acc_raw_effect <-
   main_analysis_acc_participant_level_raw_effect %>% 
@@ -1245,21 +1504,20 @@ main_analysis_acc_raw_effect <-
   gather(key = "term", value = "raw_effect")
 ```
 
+Joining F values and dfs and raw effects.
+
 ```{r}
 main_analysis_acc_raw_effect <-
   main_analysis_acc_raw_effect %>%
   inner_join(., anova_acc_f_value, by = "term")
 ```
 
-```{r}
-main_analysis_acc_raw_effect <-
-  main_analysis_acc_raw_effect %>% 
-  mutate(se = raw_effect / sqrt(f_value))
-```
+Calculating SE.
 
 ```{r}
 main_analysis_acc_raw_effect <-
-  as_tibble(main_analysis_acc_raw_effect)
+  main_analysis_acc_raw_effect %>% 
+  mutate(se = abs(raw_effect / sqrt(f_value)))
 ```
 
 #### Running the analysis
@@ -1268,28 +1526,30 @@ Saving the values needed for the analysis.
 
 ```{r}
 # Obtained sd
-interaction_se <- 
+acc_se <- 
   main_analysis_acc_raw_effect %>% 
   filter(term == "interaction_effect") %>% 
   pull(se)
 
 # Obtained effect
-interaction_effect <- 
+acc_effect <- 
   main_analysis_acc_raw_effect %>% 
   filter(term == "interaction_effect") %>% 
   pull(raw_effect)
 
 # Df
-interaction_df <- 
+acc_df <- 
   main_analysis_acc_raw_effect %>% 
   filter(term == "interaction_effect") %>% 
   pull(df)
 ```
 
+Running the Bayes factor analysis.
+
 ```{r}
-Bf(sd = interaction_se,
-   obtained = interaction_effect,
-   dfdata = interaction_df,
+Bf(sd = acc_se,
+   obtained = acc_effect,
+   dfdata = acc_df,
    meanoftheory = 0,
    sdtheory = .03,
    dftheory = 10^10,

@@ -840,6 +840,8 @@ write_tsv(neutral_analysis_sentence, "Data/Processed/Exp1/Kan_Processed_Exp1_Out
 rm(list = ls(all.names = TRUE))
 ```
 
+***
+
 # Exp 2
 ## Read files
 
@@ -956,7 +958,7 @@ test_raw %>%
 
 ## Creating a dataset for the main analysis
 
-We keep only the stroop trials where the previous trial was a necker trial.
+We keep only the stroop trials where the previous trial was a necker trial and if it is not the first trial of the test part of the experiment.
 
 ```{r}
 main_analysis_data <-
@@ -977,13 +979,55 @@ main_analysis_data <-
                                         TRUE ~ 0L))
 ```
 
-The number of test trials per conflict condition:
+There are different number of trials that we will keep per participant.
+
+```{r}
+main_analysis_data %>% 
+  group_by(participant_id, is_previous_necker, loop_num) %>% 
+  count() %>% 
+  filter(is_previous_necker == 1L) 
+```
+
+The number of trials that we will include in the analysis are different for each set of trials. As we did not know the original order of the trials for the experiment we created 5 sets of trials for Exp2 and randomly assigned each participant to a set of trials. To which set a participant was assigned to is saved in the [loop_num] variable.
+
+```{r}
+main_analysis_data %>% 
+  group_by(participant_id, is_previous_necker, loop_num) %>%
+  count() %>%
+  filter(is_previous_necker == 1L) %>% 
+  ungroup() %>% 
+  distinct(loop_num, n) %>% 
+  arrange(loop_num)
+```
+
+The number of participants in each set.
+
+```{r}
+main_analysis_data %>%
+  distinct(participant_id, .keep_all = T) %>% 
+  group_by(loop_num) %>% 
+  count()
+```
+
+The number of test trials per conflict condition.
 
 ```{r}
 main_analysis_data %>% 
   filter(is_previous_necker == 1L) %>% 
   group_by(conflict_condition) %>% 
   count()
+```
+
+The number and proporiton of test trials per conflict condition per set of trials.
+
+```{r}
+main_analysis_data %>% 
+  filter(is_previous_necker == 1L) %>% 
+  group_by(loop_num, conflict_condition) %>% 
+  count() %>% 
+  group_by(loop_num) %>% 
+  mutate(N = sum(n),
+         prop = round(n / N * 100, 2)) %>% View()
 ```
 
 We create the variables needed for the main analysis.
@@ -1031,7 +1075,7 @@ reversal_assignment %>%
             sd_reversal = sd(mean_reversal, na.rm = T))
 ```
 
-Join the calculated reversal group assignment with the full dataset.
+Join the calculated reversal group assignment with the full dataset for the accuracy analysis.
 
 ```{r}
 main_analysis_acc_data <-
@@ -1072,7 +1116,7 @@ main_analysis_rt_data <- main_analysis_data
 
 #### Excluding participants who has a condition with no data
 
-The number of conditions per participant. Because we excluded the incorrect trials, it can happen that a participant does no have reeaction time responses from all the 4 conditions.
+The number of conditions per participant. Because we excluded the incorrect trials, it can happen that a participant does not have reaction time responses from all the 4 conditions.
 
 ```{r}
 missing_condition <-
@@ -1146,34 +1190,6 @@ main_analysis_rt_data <-
   filter(is_correct == 1L)
 ```
 
-#### Replacing outliers with a cutoff value
-
-To mitigate the influence of outliers, we replaced the raw sentence reading times of those trials that are 2.5 SD s above the participant`s mean sentence reading time across all the sentence types with the 2.5 SD cutoff value of the participant.
-
-```{r}
-stroop_outliers <-
-  main_analysis_rt_data %>% 
-  group_by(participant_id) %>% 
-  summarize(mean_rt = mean(response_time, na.rm =T),
-            sd_rt = sd(response_time, na.rm = T),
-            cutoff_value_high = mean_rt + 2.5 * sd_rt,
-            cutoff_value_low = mean_rt - 2.5 * sd_rt)
-```
-
-We join the calculated cutoff values with the full dataset and replace the outlier response times with the cutoff values.
-
-```{r}
-main_analysis_rt_data <-
-  main_analysis_rt_data %>% 
-  left_join(., stroop_outliers, by = "participant_id") %>% 
-  mutate(is_outlier = case_when(response_time > cutoff_value_high ~ 1L,
-                                response_time < cutoff_value_low ~ 2L,
-                                TRUE ~ 0L),
-         response_time = case_when(is_outlier == 1L ~ cutoff_value_high,
-                                   is_outlier == 2L ~ cutoff_value_low,
-                                   TRUE ~ response_time))
-```
-
 #### Filtering the needed trials
 
 For the analysis we keep only the Stroop trials, that were followed by a Necker cube.
@@ -1184,16 +1200,46 @@ main_analysis_rt_data <-
   filter(is_previous_necker == 1L)
 ```
 
-#### Saving the dataset
+#### Replacing outliers with a cutoff value
+
+To mitigate the influence of outliers, we replaced response times of the trials that are 2.5 SDs above the participant`s mean response time with the 2.5 SD cutoff value of the participant.
 
 ```{r}
-write_tsv(main_analysis_rt_data, "Data/Processed/Exp2/Kan_Processed_Exp2_Main_Rt_data.tsv")
+stroop_outliers_conf <-
+  main_analysis_rt_data %>% 
+  group_by(participant_id) %>% 
+  summarize(mean_rt = mean(response_time, na.rm = T),
+            sd_rt = sd(response_time, na.rm = T),
+            cutoff_value_high = mean_rt + 2.5 * sd_rt,
+            cutoff_value_low = mean_rt - 2.5 * sd_rt)
+```
+
+We join the calculated cutoff values with the full dataset and replace the outlier response times with the cutoff values.
+
+```{r}
+main_analysis_rt_conf_data <-
+  main_analysis_rt_data %>% 
+  left_join(., stroop_outliers_conf, by = "participant_id") %>% 
+  mutate(is_outlier = case_when(response_time > cutoff_value_high ~ 1L,
+                                response_time < cutoff_value_low ~ 2L,
+                                TRUE ~ 0L),
+         response_time = case_when(is_outlier == 1L ~ cutoff_value_high,
+                                   is_outlier == 2L ~ cutoff_value_low,
+                                   TRUE ~ response_time))
+```
+
+#### Saving the datasets
+
+```{r}
+write_tsv(main_analysis_rt_conf_data, "Data/Processed/Exp2/Kan_Processed_Exp2_Main_Rt_Conf_data.tsv")
 ```
 
 ```{r}
 # Clear environment
 rm(list = ls(all.names = TRUE))
 ```
+
+***
 
 # Exp 3
 ## Read files
@@ -1242,8 +1288,6 @@ raw %>%
 ```
 
 We create a new variable called [trial_id] that records the order of the trials in each experiment part (practice, baseline, test).
-We create a unique varaible for the identification of the participants [participant_id].
-We create a varaible that mark which lab collected the data (Australia, Hungary, Singapore).
 
 ```{r}
 raw <-
@@ -1251,7 +1295,7 @@ raw <-
   rename(trial_id = live_row)
 ```
 
-Creating unique participant_id for the participants.
+We create a unique varaible for the identification of the participants [participant_id].
 
 ```{r}
 raw <- 
@@ -1338,7 +1382,7 @@ main_analysis_data <-
                                         TRUE ~ 0L))
 ```
 
-The number of test trials per conflict condition:
+The number of test trials per conflict condition.
 
 ```{r}
 main_analysis_data %>% 
@@ -1353,10 +1397,10 @@ We create the variables needed for the main analysis.
 main_analysis_data <-
   main_analysis_data %>% 
   mutate(is_previous_congruent = case_when(is_previous_necker == 1L ~ lag(stim_type),
-                                         TRUE ~ NA_character_),
+                                           TRUE ~ NA_character_),
          is_previous_congruent = case_when(is_previous_congruent == "congruent" ~ 1L,
                                            is_previous_congruent == "incongruent" ~ 0L,
-                                            TRUE ~ NA_integer_),
+                                           TRUE ~ NA_integer_),
          is_congruent = case_when(is_previous_necker == 1L & stim_type == "congruent" ~ 1L,
                                   is_previous_necker == 1L & stim_type == "incongruent" ~ 0L,
                                   TRUE ~ NA_integer_),
@@ -1374,10 +1418,10 @@ We excluded the data of participants whose performance was below 70% on accurate
 comprehension_probe_data <-
   main_analysis_data %>% 
   filter(procedure == "neck_inco") %>%
-  mutate(acc = score / 28 * 100) %>%
-  group_by(participant_id) %>% 
-  summarise(mean_acc = mean(acc)) %>% 
-  mutate(drop_comprehension = case_when(mean_acc < 70 ~ 1L,
+  mutate(acc = score / 28) %>%
+  group_by(participant_id) %>%
+  summarise(mean_acc = mean(acc) * 100) %>% 
+  mutate(drop_comprehension = case_when(mean_acc <= 70 ~ 1L,
                                         mean_acc > 70 ~ 0L))
 ```
 
@@ -1484,7 +1528,7 @@ main_analysis_rt_data <-
   anti_join(., missing_condition, by = "participant_id")
 ```
 
-The number of participants who has missing conditions:
+The number of participants who has missing conditions.
 
 ```{r}
 count(missing_condition)
