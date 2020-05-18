@@ -52,11 +52,13 @@ main_analysis_rt_data %>%
                                            is_previous_congruent ==  1L ~ "Congruent"),
          is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
                                   is_congruent ==  1L ~ "Congruent")) %>%
+  group_by(participant_id, is_previous_congruent, is_congruent) %>% 
+  summarise(participant_mean_rt = mean(response_time, na.rm = T)) %>%
   group_by(is_previous_congruent, is_congruent) %>% 
   summarise(N = n(),
-            mean_rt = mean(response_time, na.rm = T),
-            sd_rt = sd(response_time, na.rm = T),
-            se_rt = sd_rt / sqrt(N)) %>%
+            mean_rt = mean(participant_mean_rt, na.rm = T),
+            sd_rt = sd(participant_mean_rt, na.rm = T),
+            se_rt = sd_rt / sqrt(N)) %>% 
   ggplot() +
   aes(x = is_previous_congruent,
       y = mean_rt,
@@ -66,7 +68,7 @@ main_analysis_rt_data %>%
   geom_point(size = 6) +
   geom_errorbar(aes(ymin = mean_rt - se_rt,
                     ymax = mean_rt + se_rt),
-                width=.1) +
+                width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
   ylab("Reaction time") +
@@ -201,7 +203,7 @@ Caclulating the SE from the raw effect and the F value.
 ```{r}
 main_analysis_rt_raw_effect <-
   main_analysis_rt_raw_effect %>% 
-  mutate(se = raw_effect / sqrt(f_value))
+  mutate(se = abs(raw_effect / sqrt(f_value)))
 ```
 
 #### Running the analysis
@@ -292,10 +294,12 @@ main_analysis_acc_data %>%
                                            is_previous_congruent ==  1L ~ "Congruent"),
          is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
                                   is_congruent ==  1L ~ "Congruent")) %>%
+  group_by(participant_id, is_previous_congruent, is_congruent) %>% 
+  summarise(participant_mean_acc = mean(is_correct, na.rm = T)) %>% 
   group_by(is_previous_congruent, is_congruent) %>% 
   summarise(N = n(),
-            mean_acc = mean(is_correct, na.rm = T),
-            sd_acc = sd(is_correct, na.rm = T),
+            mean_acc = mean(participant_mean_acc, na.rm = T),
+            sd_acc = sd(participant_mean_acc, na.rm = T),
             se_acc = sd_acc / sqrt(N)) %>%
   ggplot() +
   aes(x = is_previous_congruent,
@@ -306,7 +310,7 @@ main_analysis_acc_data %>%
   geom_point(size = 6) +
   geom_errorbar(aes(ymin = mean_acc - se_acc,
                     ymax = mean_acc + se_acc),
-                width=.1) +
+                width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
   ylab("Accuracy") +
@@ -458,16 +462,219 @@ Bf(sd = interaction_se,
 ```
 
 ## outcome neutral test
-### Import data
+### Test Stroop effect
+
+Saving the values needed for the analysis.
+
+```{r}
+# Obtained sd
+main_se <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_congruent") %>% 
+  pull(se)
+
+# Obtained effect
+main_effect <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_congruent") %>% 
+  pull(raw_effect)
+
+# Df
+main_df <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_congruent") %>% 
+  pull(n_participant)
+```
+
+Running the Bf analysis with the model described in the paper.
+
+```{r}
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df - 1,
+   meanoftheory = 0,
+   sdtheory = 28,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+### Test sentence reading time
+#### Import data
 
 ```{r}
 outcome_neutral_sentence_data <- read_tsv("Data/Processed/Exp1/Kan_Processed_Exp1_OutcomeNeutral_Sentence_data.tsv")
 ```
 
-### TODO: finish?
+#### Nest the data
 
 ```{r}
+outcome_neutral_sentence_data <-
+  outcome_neutral_sentence_data %>% 
+  nest(data = c(participant_id, Congruent, Incongruent))
+```
 
+#### Performing the t-tests
+
+We calculate the t test for each sentence region separately.
+
+```{r}
+outcome_neutral_sentence_data <-
+  outcome_neutral_sentence_data %>% 
+  mutate(t_value = map_dbl(data,
+                       ~ t.test(.$Congruent, .$Incongruent, paired = TRUE, alternative = "less") %>% 
+                         broom::tidy() %>% 
+                         pull(statistic)),
+         df = map_dbl(data,
+                       ~ t.test(.$Congruent, .$Incongruent, paired = TRUE, alternative = "less") %>% 
+                         broom::tidy() %>% 
+                         pull(parameter)),
+         p_value = map_dbl(data,
+                       ~ t.test(.$Congruent, .$Incongruent, paired = TRUE, alternative = "less") %>% 
+                         broom::tidy() %>% 
+                         pull(p.value)),
+         raw_effect = map_dbl(data,
+                       ~ t.test(.$Congruent, .$Incongruent, paired = TRUE, alternative = "less") %>% 
+                         broom::tidy() %>% 
+                         pull(estimate)))
+```
+
+#### Calculating the SE
+
+```{r}
+outcome_neutral_sentence_data <-
+  outcome_neutral_sentence_data %>% 
+  mutate(se = map2_dbl(t_value, raw_effect,
+                       ~ abs(.x / .y)))
+```
+
+#### Calculating the Bayes factor
+
+We are calculating the Bf for only the temporarly ambiguous and disambiguating region.
+
+```{r}
+temp_ambig <- 
+  outcome_neutral_sentence_data %>% 
+  filter(sentence_region_type == "temporarly ambiguous")
+
+disambig <- 
+  outcome_neutral_sentence_data %>% 
+  filter(sentence_region_type == "disambiguating ambiguous")
+```
+
+Creating a plots to visualize the difference.
+
+```{r}
+temp_ambig %>% 
+  unnest(data) %>%
+  select(Congruent, Incongruent) %>% 
+  gather(key = "congruency", value = "resid_mean_reading_time") %>%  
+  group_by(congruency) %>% 
+  summarise(n = n(),
+            mean = mean(resid_mean_reading_time),
+            sd = sd(resid_mean_reading_time, na.rm = T),
+            se = sd / sqrt(n)) %>% 
+  ggplot() +
+  aes(x = congruency,
+      y = mean) +
+  geom_point(size = 6) +
+  geom_errorbar(aes(ymin = mean - se,
+                    ymax = mean + se),
+                width = .1) +
+  xlab("Congruency of the sentence region")+
+  ylab("Mean residual reading time") +
+  theme_minimal() +
+  theme(axis.title = element_text(size = 25),
+        axis.text = element_text(size = 20),
+        strip.text.x = element_text(size = 20))
+```
+
+Assignig variables to calculate bayes factor for the temporarly ambiguous region.
+
+```{r}
+# sd
+rt_sd <- 
+  temp_ambig %>% 
+  pull(se)
+
+# obtained
+rt_obtained <- 
+  temp_ambig %>% 
+  pull(raw_effect)
+
+# df
+rt_df <- 
+  temp_ambig %>% 
+  pull(df)
+```
+
+Running the Bf analysis for the temporarly ambiguous region.
+
+```{r}
+Bf(sd = rt_sd,
+   obtained = rt_obtained,
+   dfdata = rt_df,
+   meanoftheory = 0,
+   sdtheory = 40,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+Creating a plots to visualize the difference.
+
+```{r}
+disambig %>% 
+  unnest(data) %>%
+  select(Congruent, Incongruent) %>% 
+  gather(key = "congruency", value = "resid_mean_reading_time") %>%  
+  group_by(congruency) %>% 
+  summarise(n = n(),
+            mean = mean(resid_mean_reading_time),
+            sd = sd(resid_mean_reading_time, na.rm = T),
+            se = sd / sqrt(n)) %>% 
+  ggplot() +
+  aes(x = congruency,
+      y = mean) +
+  geom_point(size = 6) +
+  geom_errorbar(aes(ymin = mean - se,
+                    ymax = mean + se),
+                width = .1) +
+  xlab("Congruency of the sentence region")+
+  ylab("Mean residual reading time") +
+  theme_minimal() +
+  theme(axis.title = element_text(size = 25),
+        axis.text = element_text(size = 20),
+        strip.text.x = element_text(size = 20))
+```
+
+Assignig variables to calculate bayes factor for the disambiguating region.
+
+```{r}
+# sd
+rt_sd <- 
+  disambig %>% 
+  pull(se)
+
+# obtained
+rt_obtained <- 
+  disambig %>% 
+  pull(raw_effect)
+
+# df
+rt_df <- 
+  disambig %>% 
+  pull(df)
+```
+
+Running the Bf analysis for the disambiguating region.
+
+```{r}
+Bf(sd = rt_sd,
+   obtained = rt_obtained,
+   dfdata = rt_df,
+   meanoftheory = 0,
+   sdtheory = 18,
+   dftheory = 10^10,
+   tail = 1)
 ```
 
 ***

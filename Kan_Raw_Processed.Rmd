@@ -565,7 +565,7 @@ sentence_attributes %>%
   distinct(sentence_region_no) %>% 
   summarize(count_sentence_regions = n()) %>% 
   group_by(count_sentence_regions) %>% 
-  count()
+  summarize(number_of_sentences = n())
 ```
 
 The sum of all sentence regions:
@@ -690,7 +690,7 @@ mean_sentence_values %>%
 
 #### Removing the word "that" from the congruent sentences
 
-All the congruent sentences contains the word "that", which makes the sentences unambiguous. This word is going to be left out from the comparison. In every congruent sentence the word "that" is in the 3rd sentence region. Therefore in the final comparison we will compare the 3rd sentence regions of the incongruent sentences with the 4th sentence region of the congruent sentences. However, to make the analysis easier we assign new sentence region no's to the congruent sentences without the word "that"  now. Also, we do not use the word in the creation of the linear regression models either.
+All the congruent sentences contains the word "that", which makes the sentences unambiguous. This word is going to be left out from the comparison. In every congruent sentence the word "that" is in the 3rd sentence region. Therefore in the final comparison we will compare the 3rd sentence regions of the incongruent sentences with the 4th sentence region of the congruent sentences. However, to make the analysis easier we assign new sentence region no's to the congruent sentences without the word "that" now. Also, we do not use the word in the creation of the linear regression models either.
 
 ```{r}
 mean_sentence_values <- 
@@ -827,6 +827,14 @@ neutral_analysis_sentence <-
   mutate(sentence_region_type = case_when(sentence_region_no == 3L ~ "temporarly ambiguous",
                                           sentence_region_no == 4L ~ "disambiguating ambiguous",
                                           TRUE ~ "not ambiguous"))
+```
+
+### Unnesting the data for saving
+
+```{r}
+neutral_analysis_sentence <- 
+  neutral_analysis_sentence %>%
+  unnest(data)
 ```
 
 #### Saving the dataset
