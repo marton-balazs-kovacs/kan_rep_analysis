@@ -685,7 +685,7 @@ Bf(sd = rt_sd,
 
 ```{r}
 main_analysis_rt_data <-
-  read_tsv("Data/Processed/Exp2/Kan_Processed_Exp2_Main_Rt_Conf_data.tsv")
+  read_tsv("Data/Processed/Exp2/Kan_Processed_Exp2_Main_Rt_data.tsv")
 ```
 
 ### Exploratory data analysis

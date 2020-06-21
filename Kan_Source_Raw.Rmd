@@ -11,6 +11,7 @@ output: html_document
 library(tidyverse)
 library(readbulk)
 library(lubridate)
+library(osfr)
 ```
 
 # Load custom functions
@@ -38,9 +39,12 @@ kan_project <- osf_retrieve_node(data_guid)
 
 ## Download data locally
 
+Source data for exp1 should be downloaded through this code.
+Source data for exp2 and exp3 are stored at the Decision lab ELTE university server.
+
 ```{r osf download data, message = FALSE, echo = T, results = "hide"}
 # Save data path in the project repository
-local_data_pth <- file.path("Data","Source")
+local_data_pth <- file.path("Data", "Source")
 
 # Create local data structure if it is missing
 create_local_structure(local_data_pth)
@@ -52,6 +56,7 @@ experiment_folders <-
   filter(name == "Source") %>% 
   osf_ls_files()
 
+# Running this function takes a lot of time so be aware
 experiment_folders %>% 
   group_by(name) %>% 
   do(download_files(.,local_data_pth))
@@ -93,11 +98,6 @@ The following variables are added to the tibbles during merging:
 * lab: Where were the data collected. Options: "Australia", "Hungary", "Singapore", "United Kingdom"
 
 ```{r}
-# test <- read_plus(pattern = "*.csv",
-#                     path = "Data/Source/",
-#                     subfolder_name = "Exp1")
-# TODO: fix data type error in bind_row
-
 source <- read_opensesame(directory = "Data/Source/Exp1", subdirectories = TRUE, verbose = T) %>% mutate(filename = str_remove_all(File, ".*/|.csv"),
                 lab = Subdirectory) %>%
   select(-File, -Subdirectory)
@@ -144,12 +144,6 @@ The following variables are added to the tibbles during merging:
 * lab: Where were the data collected. Options: "Australia", "Hungary", "Singapore", "United Kingdom"
 
 ```{r}
-# source <-
-#   read_plus(pattern = "*.csv",
-#                     path = "Data/Source/",
-#                     subfolder_name = "Exp2")
-## TODO: Find the problem with read_plus. bind_rows want to convert a chr vector to logical: response_Instructions_7
-
 source <- read_opensesame(directory = "Data/Source/Exp2", subdirectories = TRUE, verbose = T) %>% mutate(filename = str_remove_all(File, ".*/|.csv"),
                 lab = Subdirectory) %>%
   select(-File, -Subdirectory)
@@ -211,11 +205,6 @@ The following variables are added to the tibbles during merging:
 * lab: Where were the data collected. Options: "Australia", "Hungary", "Singapore", "United Kingdom"
 
 ```{r}
-# source <- read_plus(pattern = "*.csv",
-#                   path = "Data/Source/",
-#                   subfolder_name = "Exp3",
-#                   sep = ",")
-
 source <- read_opensesame(directory = "Data/Source/Exp3", subdirectories = TRUE, verbose = T) %>% mutate(filename = str_remove_all(File, ".*/|.csv"),
                 lab = Subdirectory) %>%
   select(-File, -Subdirectory)
