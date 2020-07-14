@@ -7,7 +7,7 @@ output: html_document
 
 # Load packages
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(osfr)
 library(readxl)
@@ -30,39 +30,39 @@ source("utils.R")
 Read/write token should be created on OSF and it should be named as "osf_token_write".
 
 ```{r osf authentication}
-# osf_auth(token = read_lines(list.files(pattern ="osf_token_write_.*.txt")))
+ osf_auth(token = read_lines(list.files(pattern ="osf_token_read_.*.txt")))
 ```
 
 ## Connect to data OSF folder
 
 ```{r osf connect to OSF folder, message = FALSE}
-# data_guid <- "c9vmx"
-# 
-# kan_project <- osf_retrieve_node(data_guid)
+ data_guid <- "6bd43"
+ 
+ kan_project <- osf_retrieve_node(data_guid)
 ```
 
 ## Download data locally
 
 ```{r osf download data, message = FALSE, echo = T, results = "hide"}
 # Save data path in the project repository
-# local_data_pth <- file.path("Data","Raw")
-# 
+ local_data_pth <- file.path("Data","Raw")
+#
 # # Create local data structure if it is missing
-# create_local_structure(local_data_pth)
-# 
+ create_local_structure(local_data_pth)
+#
 # # TODO: Rewrite this part if there are data uploaded
 # # List datafiles on OSF
-# data_files <- 
-#   kan_project %>% 
-#   osf_ls_files() %>% 
-#   filter(name == "Processed") %>% 
-#   osf_ls_files() 
-# 
-# data_files %>% 
-#   group_by(name) %>% # for each experiment type
-#   do(download_files(.,local_data_pth))
+data_files <-
+  kan_project %>%
+  osf_ls_nodes() %>%
+  filter(name == "Raw") %>%
+  osf_ls_files()
+#
+data_files %>%
+  group_by(name) %>% # for each experiment type
+  do(download_files(.,local_data_pth))
 
-# uncomment following line to remove the data   
+# uncomment following line to remove the data
 # remove_local_data(local_data_pth)
 ```
 
