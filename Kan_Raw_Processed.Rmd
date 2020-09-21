@@ -30,15 +30,15 @@ source("utils.R")
 Read/write token should be created on OSF and it should be named as "osf_token_write".
 
 ```{r osf authentication}
- osf_auth(token = read_lines(list.files(pattern ="osf_token_read_.*.txt")))
+osf_auth(token = read_lines(list.files(pattern ="osf_token_write_.*.txt")))
 ```
 
 ## Connect to data OSF folder
 
 ```{r osf connect to OSF folder, message = FALSE}
- data_guid <- "6bd43"
+data_guid <- "6bd43"
  
- kan_project <- osf_retrieve_node(data_guid)
+kan_project <- osf_retrieve_node(data_guid)
 ```
 
 ## Download data locally
@@ -46,33 +46,40 @@ Read/write token should be created on OSF and it should be named as "osf_token_w
 ```{r osf download data, message = FALSE, echo = T, results = "hide"}
 # Save data path in the project repository
  local_data_pth <- file.path("Data","Raw")
-#
-# # Create local data structure if it is missing
+
+# Create local data structure if it is missing
  create_local_structure(local_data_pth)
-#
-# # TODO: Rewrite this part if there are data uploaded
-# # List datafiles on OSF
-data_files <-
+
+# List datafolders on OSF
+data_folder <-
   kan_project %>%
   osf_ls_nodes() %>%
   filter(name == "Raw") %>%
   osf_ls_files()
-#
-data_files %>%
-  group_by(name) %>% # for each experiment type
-  do(download_files(.,local_data_pth))
 
-# uncomment following line to remove the data
+# List datafiles in data folders
+## Note: This only works if there is one file in one folder
+data_files <- tibble(name = NA_character_, id = NA_character_, meta = list())
+for (i in 1:nrow(data_folder)) {
+  data_files[i, ] <- osf_ls_files(data_folder[i, ])
+}
+
+# Download datafiles to folders
+purrr::map2(data_files$id, data_folder$name,
+           ~ osf_retrieve_file(.x) %>% 
+             osf_download(path = file.path(local_data_pth, .y)))
+
+# Uncomment following line to remove the data
 # remove_local_data(local_data_pth)
 ```
 
 ## Create folder structure for the output files
 
 ```{r}
-# # Save data path in the project repository
+# Save data path in the project repository
 # local_data_pth <- file.path("Data","Processed")
-# 
-# # Create local data structure if it is missing
+ 
+# Create local data structure if it is missing
 # create_local_structure(local_data_pth)
 ```
 
@@ -82,7 +89,7 @@ data_files %>%
 Read datafile from the subfolder of the given experiment.
 
 ```{r}
-raw <- read_tsv("Data/Raw/Exp1/Kan_Raw_Exp1_data.tsv")
+raw <- vroom::vroom("Data/Raw/Exp1/Kan_Raw_Exp1_data.tsv")
 ```
 
 ## EDA
@@ -213,12 +220,14 @@ test_trial_spec <- read_xlsx("exp1_test_trial_spec.xlsx", sheet = 1)
 ### Creating variables for the test trials
 
 We create a [trial_id] variable that is unique for each trial of every participant.
-Because of a mistake during the creation of the first experiment we did not log the last word of each sentence. However, the program logs the participants answer in the following line in the variable of the specific modul [keyboard_input_3]. However, opensesame iterates the last pressed answer option in the variable, therefore we kept only those values that are following the missing trial.
+Because of a mistake during the creation of the first experimental program we did not log the response and response time to the last word of each sentence (n) in the proper variable. This information however is not lost, as the program logs the participants answer in the following (n+1) row in another variable called [keyboard_input_3]. The [keyboard_input_3] variable however contains the last response multiple times, because opensesame iterates the last pressed answer option in the variable for following rows. Therefore we kept only those exact values that are in the row following (n+1) the missing trial (n).
 
 ```{r}
 test_raw <-
   test_raw %>% 
+  # Create unique trial_id variable
   rename(trial_id = live_row) %>% 
+  # We are keeping only the responses to the last word and dropping every other value in these variables
   mutate(response_keyboard_input_3 = case_when(trial_id %in% (test_trial_spec$trial_id + 1) ~ response_keyboard_input_3,
                                                TRUE ~ NA_character_),
          response_time_keyboard_input_3 = case_when(!is.na(response_keyboard_input_3) ~ response_time_keyboard_input_3,
@@ -352,22 +361,20 @@ test_raw <-
 
 ### Testing the number of responses per participant
 
-Each participant should have complated XXX trials () during the test part of the experiment.
+Each participant should have completed 1022 trials during the test part of the experiment.
 
 Number of responses per participant
 
 ```{r}
 test_raw %>% 
-  group_by(participant_id) %>% 
-  count()
+  count(participant_id)
 ```
 
 Participants who has different number of answers
 
 ```{r}
 test_raw %>% 
-  group_by(participant_id) %>% 
-  count() %>% 
+  count(participant_id) %>% 
   filter(n != 1022)
 ```
 
@@ -426,9 +433,9 @@ The number of conditions per participant. Because we excluded the incorrect tria
 missing_condition <-
   main_analysis_rt_data %>% 
   group_by(participant_id, is_congruent, is_previous_congruent) %>% 
-  count() %>% 
-  group_by(participant_id) %>%
-  count() %>% 
+  summarise(n = n()) %>%
+  group_by(participant_id) %>% 
+  summarise(n = n()) %>% 
   filter(n != 4) %>%
   select(participant_id) %>% 
   ungroup()
