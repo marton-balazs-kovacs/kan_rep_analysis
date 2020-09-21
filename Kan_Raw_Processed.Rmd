@@ -518,7 +518,7 @@ neutral_analysis_sentence <-
 
 #### Read the specifications of the sentence regions
 
-Each sentence is diveded into sentence regions. A sentence region can be consisted of multiple words. This file can be found in the supplementary materials and it contains all the information about the sentence regions.
+Each sentence is divided into sentence regions. A sentence region can be consisted of multiple words. This file can be found in the supplementary materials and it contains all the information about the sentence regions.
 
 ```{r}
 sentence_attributes <- read_xlsx("sentence_region.xlsx", sheet = 1)
@@ -609,11 +609,12 @@ sentence_attributes %>%
 
 #### Replacing outlier sentence reading times
 
-To mitigate the influence of outliers, we replaced the raw sentence reading times of those trials that are 2.5 SD s above the participant`s mean sentence reading time across all the sentence types with the 2.5 SD cutoff value of the participant.
+To mitigate the influence of outliers, we replaced the raw sentence reading times of those trials (words) that are 2.5 SD s above the participant`s mean sentence reading time across all the sentence types with the 2.5 SD cutoff value of the participant.
 
 ```{r}
 sentence_reading_time <- 
   neutral_analysis_sentence %>% 
+  # ProcSent trials are the body of the sentence and Proc2 trials are the last word of the sentence
   filter(procedure %in% c("ProcSent", "Proc2")) %>% 
   group_by(participant_id) %>% 
   summarize(mean_reading_time = mean(response_time, na.rm = T),
@@ -650,7 +651,8 @@ neutral_analysis_sentence <-
 #### Calculating the number of characters in each sentence region
 
 We are cutting the white spaces from each word. As the sentence attributes were created by hand they might contain not needed white spaces.
-When we are calculating the number of characters in each word.
+
+We are calculating the number of characters in each word. Special characters are counted as well.
 
 ```{r}
 neutral_analysis_sentence <-
@@ -697,7 +699,7 @@ mean_sentence_values %>%
 
 #### Removing the word "that" from the congruent sentences
 
-All the congruent sentences contains the word "that", which makes the sentences unambiguous. This word is going to be left out from the comparison. In every congruent sentence the word "that" is in the 3rd sentence region. Therefore in the final comparison we will compare the 3rd sentence regions of the incongruent sentences with the 4th sentence region of the congruent sentences. However, to make the analysis easier we assign new sentence region no's to the congruent sentences without the word "that" now. Also, we do not use the word in the creation of the linear regression models either.
+All the congruent sentences contains the word "that", which makes the sentences unambiguous. This word is going to be left out from the comparison. In every congruent sentence the word "that" is in the 3rd sentence region. Therefore in the final comparison we will compare the 3rd sentence regions of the incongruent sentences with the 4th sentence region of the congruent sentences. However, to make the analysis easier we assign new sentence region no's to the congruent sentences without the word "that" now. Also, we do not use that word in the creation of the linear regression models either.
 
 ```{r}
 mean_sentence_values <- 
@@ -715,7 +717,7 @@ mean_sentence_values <-
 
 #### Calculating the residual reading times
  
-In order to account for the biasing effect of the length of the word on the reading time, we calculated the residual reading time for each word. For every sentence-region (see the supplementary materials for the partition of each sentence into sentence-regions) of each participant we applied a simple linear regression with the actual reading time as the outcome variable and the length of the region in the number of characters as the predictor variable. We included only the congruent ( N = 21) and the filler sentences ( N = 29) in the linear regression, as measures of normal reading time.
+In order to account for the biasing effect of the length of the sentence region on the reading time, we calculated the residual reading time for each sentence region. For every sentence-region (see the supplementary materials for the partition of each sentence into sentence-regions) of each participant we applied a simple linear regression with the actual reading time as the outcome variable and the length of the region in the number of characters as the predictor variable. We included only the congruent (N = 21) and the filler sentences (N = 29) in the linear regression, as measures of normal reading time.
 
 ```{r}
 residual_model <-
@@ -754,7 +756,7 @@ residual_reading_time_con <-
   mutate(residual_reading_time = mean_sentence_region_reading_time - .fitted)
 ```
 
-In the Kan et al. (2013) paper each sentence region had only one data point from each participant. Therefore, we avarage the residual reading times of the sentences for each sentence region per congruency condition per participant.
+In the Kan et al. (2013) paper each sentence region had only one data point from each participant. Therefore, we average the residual reading times of the sentences for each sentence region per congruency condition per participant.
 
 ```{r}
 residual_reading_time_con_aggregated <-
@@ -826,7 +828,7 @@ neutral_analysis_sentence <-
 
 ### Flagging sentence regions of interest
 
-We expect to find a difference in the temporarily ambiguous region and the disambiguating region. The sentence region in the incongruent sentences containing the temporarly ambiguous words is the 3rd region, while the disambiguation region is the 4th region.
+We expect to find a difference in the temporarily ambiguous region and the disambiguating region. The sentence region in the incongruent sentences containing the temporarily ambiguous words is the 3rd region, while the disambiguation region is the 4th region.
 
 ```{r}
 neutral_analysis_sentence <- 
@@ -863,7 +865,7 @@ rm(list = ls(all.names = TRUE))
 Read datafile from the subfolder of the given experiment.
 
 ```{r}
-raw <- read_tsv("Data/Raw/Exp2/Kan_Raw_Exp2_data.tsv")
+raw <- vroom::vroom("Data/Raw/Exp2/Kan_Raw_Exp2_data.tsv")
 ```
 
 ## Selecting only needed variables
@@ -894,7 +896,7 @@ raw <-
 ## Transforming variables
 ### Variables for identification
 
-Checking the number of trials per parciticpant. Each participant should have 271 trials:
+Checking the number of trials per participant. Each participant should have 271 trials:
 
 ```{r}
 raw %>% 
@@ -903,8 +905,8 @@ raw %>%
 ```
 
 We create a new variable called [trial_id] that records the order of the trials in each experiment part (practice, baseline, test).
-We create a unique varaible for the identification of the participants [participant_id].
-We create a varaible that mark which lab collected the data (Australia, Hungary, Singapore).
+We create a unique variable for the identification of the participants [participant_id].
+We create a variable that mark which lab collected the data (Australia, Hungary, Singapore).
 
 ```{r}
 raw <-
@@ -921,7 +923,11 @@ raw <-
   select(participant_id, everything(), -filename)
 ```
 
-There are missing values in the loopnum variable because of the way opensesame saves variables. Therefore, we fill up the missing values for each participant.
+There are missing values in the loopnum variable because of the way opensesame saves variables.
+
+The number of trials that we will include in the analysis are different for each set of trials. As we did not know the original order of the trials for the experiment we created 6 sets of trials for Exp2 and randomly assigned each participant to a set of trials. To which set a participant was assigned to is saved in the [loop_num] variable.
+
+Therefore, we fill up the missing values for each participant. 
 
 ```{r}
 raw <-
@@ -933,21 +939,29 @@ raw <-
 
 ### Response variables
 
-We did not record the exact responses for the incongruent necker trials but the number of reversals in the variable [reversal]. We add the content of this varible to the [response] variable.
-The response time in the incongruent necker trials were fixed as we measured the number of reversals in the time of 90 seconds, therefore the [response time] variable gets NA values for the incongruent neckert trials.
+We did not record the exact responses for the incongruent necker trials but the number of reversals in the variable [reversal].
+
+The response time in the incongruent necker trials were fixed as we measured the number of reversals in the time of 90 seconds, therefore the [response time] variable gets NA values for the incongruent necker trials.
+
 By a mistake in the experimental program we did not record the correct response for the congruent necker trials during the test part of the experiment. Therefore, we add the correct response keys to the [correct_response] variable.
+
 For the incongruent necker trials there is no correct response, therefore the [correct] variable should be empty when for those trials.
 
 ```{r}
 raw <-
   raw %>%
+  # We only keep those values in the [reversal] var that corresponds to incon necker trials
   mutate(reversal = case_when(procedure == "neck_inco" ~ reversal,
                               TRUE ~ NA_real_),
+         # For the incon necker trials the response time is NA
          response_time = case_when(procedure == "neck_inco" ~ NA_real_,
                               TRUE ~ response_time),
+         # Correct response mapping for con necker trials
          correct_response = case_when(procedure == "neck_con_l" ~ "d",
                                       procedure == "neck_con_r" ~ "f",
                                       TRUE ~ correct_response),
+         # For incon necker trials there is no correct response otherwise
+         # if the response is the same as the correct resp it is a hit
          correct = case_when(procedure == "neck_inco" ~ NA_integer_,
                              response == correct_response ~ 1L,
                              response != correct_response ~ 0L))
@@ -999,16 +1013,16 @@ There are different number of trials that we will keep per participant.
 ```{r}
 main_analysis_data %>% 
   group_by(participant_id, is_previous_necker, loop_num) %>% 
-  count() %>% 
+  summarise(n = n()) %>% 
   filter(is_previous_necker == 1L) 
 ```
 
-The number of trials that we will include in the analysis are different for each set of trials. As we did not know the original order of the trials for the experiment we created 5 sets of trials for Exp2 and randomly assigned each participant to a set of trials. To which set a participant was assigned to is saved in the [loop_num] variable.
+To which set a participant was assigned to is saved in the [loop_num] variable.
 
 ```{r}
 main_analysis_data %>% 
   group_by(participant_id, is_previous_necker, loop_num) %>%
-  count() %>%
+  summarise(n = n()) %>%
   filter(is_previous_necker == 1L) %>% 
   ungroup() %>% 
   distinct(loop_num, n) %>% 
@@ -1020,8 +1034,7 @@ The number of participants in each set.
 ```{r}
 main_analysis_data %>%
   distinct(participant_id, .keep_all = T) %>% 
-  group_by(loop_num) %>% 
-  count()
+  count(loop_num)
 ```
 
 The number of test trials per conflict condition.
@@ -1029,8 +1042,7 @@ The number of test trials per conflict condition.
 ```{r}
 main_analysis_data %>% 
   filter(is_previous_necker == 1L) %>% 
-  group_by(conflict_condition) %>% 
-  count()
+  count(conflict_condition)
 ```
 
 The number and proporiton of test trials per conflict condition per set of trials.
@@ -1038,11 +1050,11 @@ The number and proporiton of test trials per conflict condition per set of trial
 ```{r}
 main_analysis_data %>% 
   filter(is_previous_necker == 1L) %>% 
-  group_by(loop_num, conflict_condition) %>% 
-  count() %>% 
+  group_by(loop_num) %>% 
+  count(conflict_condition) %>% 
   group_by(loop_num) %>% 
   mutate(N = sum(n),
-         prop = round(n / N * 100, 2)) %>% View()
+         prop = round(n / N * 100, 2))
 ```
 
 We create the variables needed for the main analysis.
@@ -1139,9 +1151,9 @@ missing_condition <-
   filter(is_previous_necker == 1L,
          is_correct == 1L) %>%
   group_by(participant_id, is_congruent, is_previous_congruent) %>% 
-  count() %>% 
+  summarise(n = n()) %>% 
   group_by(participant_id) %>%
-  count() %>% 
+  summarise(n = n()) %>% 
   filter(n != 4) %>%
   select(participant_id) %>% 
   ungroup()
