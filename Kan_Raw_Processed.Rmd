@@ -351,7 +351,7 @@ exclude_comprehension <-
   select(participant_id)
 ```
 
-Excluding the paticipants and creating a new dataset for this analysis.
+Excluding the participants and creating a new dataset for this analysis.
 
 ```{r}
 test_raw <-
@@ -380,7 +380,7 @@ test_raw %>%
 
 ## Creating a dataset for the main analysis
 
-After cleaning the dataset and addding the missing information about the sentences, we create a dataset for the main accuracy and rt analysis of the first experiement.
+After cleaning the dataset and adding the missing information about the sentences, we create a dataset for the main accuracy and rt analysis of the first experiment.
 We only keep the variables that are needed for this analysis.
 We only keep stroop trials that are following congruent and incongruent sentences, but not filler sentences.
 We also create new variables needed for these analysis.
@@ -427,7 +427,7 @@ main_analysis_rt_data <-
 
 ### Excluding participants who has a condition with no data
 
-The number of conditions per participant. Because we excluded the incorrect trials, it can happen that a participant does no have reeaction time responses from all the 4 conditions.
+The number of conditions per participant. Because we excluded the incorrect trials, it can happen that a participant does no have reaction time responses from all the 4 conditions.
 
 ```{r}
 missing_condition <-
@@ -442,6 +442,7 @@ missing_condition <-
 ```
 
 Excluding these participants from further analysis.
+We exclude these participants not only from the reaction time analysis but the accuracy analysis as well.
 
 ```{r}
 main_analysis_rt_data <-
@@ -495,9 +496,12 @@ write_tsv(main_analysis_rt_data, "Data/Processed/Exp1/Kan_Processed_Exp1_Main_Rt
 
 Create a new datatable for the accuracy analysis of Exp1.
 
+We exclude the participant who made so many mistakes that one condition is missing correct responses.
+
 ```{r}
 main_analysis_acc_data <-
-  main_analysis_data
+  main_analysis_data %>% 
+  anti_join(., missing_condition, by = "participant_id")
 ```
 
 ### Saving data
@@ -1076,78 +1080,13 @@ main_analysis_data <-
   rename(is_correct = correct)
 ```
 
-### Creating accuracy analysis data
-#### Reversal assignment
+### Excluding participants who has a condition with no data
 
-We assign each participant to a reversal group based on the experienced reversal number in the incongruent necker trials.
-
-```{r}
-reversal_assignment <-
-  main_analysis_data %>% 
-  filter(procedure == "neck_inco") %>% 
-  group_by(participant_id) %>% 
-  summarize(mean_reversal = mean(reversal)) %>% 
-  dicho(mean_reversal,  dich.by = "median") %>% 
-  rename(reversal_group = mean_reversal_d) %>% 
-  mutate(reversal_group = case_when(reversal_group == "0" ~ "low",
-                                    reversal_group == "1" ~ "high"))
-```
-
-Check the avarge number of experienced reversals across participants:
-
-```{r}
-reversal_assignment %>% 
-  group_by(reversal_group) %>% 
-  summarize(group_mean_reversal = mean(mean_reversal, na.rm = T),
-            sd_reversal = sd(mean_reversal, na.rm = T))
-```
-
-Join the calculated reversal group assignment with the full dataset for the accuracy analysis.
-
-```{r}
-main_analysis_acc_data <-
-  main_analysis_data %>% 
-  left_join(., reversal_assignment, by = "participant_id")
-```
-
-#### Filtering the needed trials
-
-For the analysis we keep only the Stroop trials, that were followed by a Necker cube.
-
-```{r}
-main_analysis_acc_data <-
-  main_analysis_acc_data %>% 
-  filter(is_previous_necker == 1L)
-```
-
-#### Dropping not needed variables
-
-```{r}
-main_analysis_acc_data <-
-  main_analysis_acc_data %>% 
-  select(-is_previous_necker,
-         -reversal)
-```
-
-#### Saving the dataset
-
-```{r}
-write_tsv(main_analysis_acc_data, "Data/Processed/Exp2/Kan_Processed_Exp2_Main_Acc_data.tsv")
-```
-
-### Creating reaction time analysis data
-
-```{r}
-main_analysis_rt_data <- main_analysis_data
-```
-
-#### Excluding participants who has a condition with no data
-
-The number of conditions per participant. Because we excluded the incorrect trials, it can happen that a participant does not have reaction time responses from all the 4 conditions.
+The number of conditions per participant. Because we excluded the incorrect trials for the reaction time analysis, it can happen that a participant does not have reaction time responses from all the 4 conditions. We decided to exclude these participants from both the reaction time and the accuracy analysis.
 
 ```{r}
 missing_condition <-
-  main_analysis_rt_data %>% 
+  main_analysis_data %>% 
   filter(is_previous_necker == 1L,
          is_correct == 1L) %>%
   group_by(participant_id, is_congruent, is_previous_congruent) %>% 
@@ -1159,11 +1098,11 @@ missing_condition <-
   ungroup()
 ```
 
-Excluding these participants from further analysis.
+Excluding these participants from further analysis. We will exclude these participants from the accuracy analysis as well.
 
 ```{r}
-main_analysis_rt_data <-
-  main_analysis_rt_data %>%
+main_analysis_data <-
+  main_analysis_data %>%
   anti_join(., missing_condition, by = "participant_id")
 ```
 
@@ -1173,13 +1112,13 @@ The number of participants who has missing conditions:
 count(missing_condition)
 ```
 
-#### Reversal assignment
+### Reversal assignment
 
 We assign each participant to a reversal group based on the experienced reversal number in the incongruent necker trials.
 
 ```{r}
 reversal_assignment <-
-  main_analysis_rt_data %>% 
+  main_analysis_data %>% 
   filter(procedure == "neck_inco") %>% 
   group_by(participant_id) %>% 
   summarize(mean_reversal = mean(reversal)) %>% 
@@ -1190,7 +1129,7 @@ reversal_assignment <-
          reversal_group = as.factor(reversal_group))
 ```
 
-Check the avarge number of experienced reversals across participants:
+Check the average number of experienced reversals across participants:
 
 ```{r}
 reversal_assignment %>% 
@@ -1202,9 +1141,24 @@ reversal_assignment %>%
 Join the calculated reversal group assignment with the full dataset.
 
 ```{r}
-main_analysis_rt_data <-
-  main_analysis_rt_data %>% 
+main_analysis_data <-
+  main_analysis_data %>% 
   left_join(., reversal_assignment, by = "participant_id")
+```
+
+We are comparing the reversal_assignment dataset to the main_analysis_data after join to see whether it was successful.
+
+```{r}
+setdiff(
+  select(main_analysis_data, participant_id, mean_reversal, reversal_group),
+  reversal_assignment
+)
+```
+
+### Creating reaction time analysis data
+
+```{r}
+main_analysis_rt_data <- main_analysis_data
 ```
 
 #### Keeping only correct trials
@@ -1261,6 +1215,32 @@ main_analysis_rt_conf_data <-
 write_tsv(main_analysis_rt_conf_data, "Data/Processed/Exp2/Kan_Processed_Exp2_Main_Rt_data.tsv")
 ```
 
+### Creating accuracy analysis data
+#### Filtering the needed trials
+
+For the analysis we keep only the Stroop trials, that were followed by a Necker cube.
+
+```{r}
+main_analysis_acc_data <-
+  main_analysis_acc_data %>% 
+  filter(is_previous_necker == 1L)
+```
+
+#### Dropping not needed variables
+
+```{r}
+main_analysis_acc_data <-
+  main_analysis_acc_data %>% 
+  select(-is_previous_necker,
+         -reversal)
+```
+
+#### Saving the dataset
+
+```{r}
+write_tsv(main_analysis_acc_data, "Data/Processed/Exp2/Kan_Processed_Exp2_Main_Acc_data.tsv")
+```
+
 ```{r}
 # Clear environment
 rm(list = ls(all.names = TRUE))
@@ -1274,7 +1254,7 @@ rm(list = ls(all.names = TRUE))
 Read datafile from the subfolder of the given experiment.
 
 ```{r}
-raw <- read_tsv("Data/Raw/Exp3/Kan_Raw_Exp3_data.tsv")
+raw <- vroom::vroom("Data/Raw/Exp3/Kan_Raw_Exp3_data.tsv")
 ```
 
 ## Selecting only needed variables
@@ -1306,7 +1286,7 @@ raw <-
 ## Transforming variables
 ### Variables for identification
 
-Checking the number of trials per parciticpant. Each participant should have 271 trials:
+Checking the number of trials per participant. Each participant should have 271 trials:
 
 ```{r}
 raw %>% 
@@ -1331,7 +1311,7 @@ raw <-
   select(participant_id, everything(), -filename)
 ```
 
-There are missing values in the loopnum variable because of the way opensesame saves variables. Therefore, we fill up the missing values for each participant.
+There are missing values in the [loopnum] variable because of the way opensesame saves variables. Therefore, we fill up the missing values for each participant. The [loopnum] stores which pseudo random trial order a participant is assigned to out of 6.
 
 ```{r}
 raw <-
@@ -1344,9 +1324,13 @@ raw <-
 ### Response variables
 
 The [keypress] variable contains the number of reversals. For the sake of simplicity we rename it to reversal.
+
 The [score] variable contains the number of correct reversals during the incongruent trial.
+
 The response time in the incongruent necker trials were fixed as we measured the number of reversals in the time of 90 seconds, therefore the [response time] variable gets NA values for the incongruent neckert trials.
+
 By a mistake in the experimental program we did not record the correct response for the congruent necker trials during the test part of the experiment. Therefore, we add the correct response keys to the [correct_response] variable.
+
 For the incongruent necker trials there is no correct response, therefore the [correct] variable should be empty when for those trials.
 
 ```{r}
@@ -1470,6 +1454,38 @@ main_analysis_data <-
   filter(drop_comprehension == 0L)
 ```
 
+#### Excluding participants who has a condition with no data
+
+The number of conditions per participant. Because we excluded the incorrect trials for the reaction time analysis, it can happen that a participant does no have reaction time responses from all the 4 conditions. We decided that we will exclude these participants from both analyses.
+
+```{r}
+missing_condition <-
+  main_analysis_data %>% 
+  filter(is_previous_necker == 1L,
+         is_correct == 1L) %>%
+  group_by(participant_id, is_congruent, is_previous_congruent) %>% 
+  summarise(n = n()) %>% 
+  group_by(participant_id) %>%
+  summarise(n = n()) %>% 
+  filter(n != 4) %>%
+  select(participant_id) %>% 
+  ungroup()
+```
+
+Excluding these participants from further analysis.
+
+```{r}
+main_analysis_data <-
+  main_analysis_data %>%
+  anti_join(., missing_condition, by = "participant_id")
+```
+
+The number of participants who has missing conditions.
+
+```{r}
+count(missing_condition)
+```
+
 ### Creating accuracy analysis data
 
 ```{r}
@@ -1529,36 +1545,6 @@ For the analysis we keep only the Stroop trials, that were followed by a Necker 
 main_analysis_rt_data <-
   main_analysis_rt_data %>% 
   filter(is_previous_necker == 1L)
-```
-
-#### Excluding participants who has a condition with no data
-
-The number of conditions per participant. Because we excluded the incorrect trials, it can happen that a participant does no have reeaction time responses from all the 4 conditions.
-
-```{r}
-missing_condition <-
-  main_analysis_rt_data %>% 
-  group_by(participant_id, is_congruent, is_previous_congruent) %>% 
-  count() %>% 
-  group_by(participant_id) %>%
-  count() %>% 
-  filter(n != 4) %>%
-  select(participant_id) %>% 
-  ungroup()
-```
-
-Excluding these participants from further analysis.
-
-```{r}
-main_analysis_rt_data <-
-  main_analysis_rt_data %>%
-  anti_join(., missing_condition, by = "participant_id")
-```
-
-The number of participants who has missing conditions.
-
-```{r}
-count(missing_condition)
 ```
 
 #### Replacing outliers with a cutoff value
