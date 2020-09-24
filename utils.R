@@ -1,29 +1,3 @@
-#' Function to read and merge local datafiles
-#' 
-#' @param sep The separation only works currently for csv files. So sep can have two values, "," for read_csv, and ";" for read_csv2.
-read_plus <- function(pattern, path, subfolder_name, exclude = NULL) {
-files <- tibble(list = list.files(path = paste0(path, subfolder_name), pattern = pattern, full.names = T, recursive = T))
-
-if(!is.null(exclude)){
-  files <- filter(files, !str_detect(list, exclude))
-}
-
-
-
-files %>%
-  pull(list) %>% 
-  map_dfr(.,
-          ~ read_csv(.x,
-                     col_types = cols(.default = "c")) %>% 
-            mutate(data_type = str_extract(.x, "(?<=/).*?(?=/)"),
-                   filename = str_remove_all(.x, ".*/|.csv"),
-                   experiment = str_extract(.x, subfolder_name),
-                   lab = str_match(.x, "([a-zA-Z_]+)\\/[a-zA-Z_]+-[0-9]+.csv$")[,2])
-          )
-}
-
-# TODO: Change .csv here
-
 #' Download all files from osf directory 
 #' This function is intended to run inside dplyr do() verb. Downloads data locally
 #' Created by Filip Dechtěrenko
@@ -55,7 +29,7 @@ download_files <- function(df, local_data_pth) {
     osf_ls_files() %>% 
     rowwise() %>% 
     do(osf_retrieve_file(.$id) %>% 
-         osf_download(path = file.path(local_data_pth, df$name,.$name)))
+         osf_download(path = file.path(local_data_pth, df$name, .$name)))
 }
 
 #' Create local file structure

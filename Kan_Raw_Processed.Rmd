@@ -539,7 +539,7 @@ sentence_attributes <-
 ```
 
 Join the sentence region specifications to the full dataset.
-
+# TODO: for some participants starting with 3018 the dataset is different and word_no and sentence_id is missing why? for most sentences it is present once but sometimes not
 ```{r}
 neutral_analysis_sentence <-
   neutral_analysis_sentence %>% 
@@ -769,7 +769,7 @@ residual_reading_time_con_aggregated <-
   summarise(mean_residual_reading_time = mean(residual_reading_time))
 ```
 
-Now we fit the modell to the inconguent sentences to calculate the predicted reading time.
+Now we fit the model to the inconguent sentences to calculate the predicted reading time.
 
 ```{r}
 predicted_reading_time_model_incon <-
@@ -793,7 +793,7 @@ residual_reading_time_incon <-
   mutate(residual_reading_time = mean_sentence_region_reading_time - .fitted)
 ```
 
-In the Kan et al. (2013) paper each sentence region had only one data point from each participant. Therefore, we avarage the residual reading times of the sentences for each sentence region per congruency condition per participant.
+In the Kan et al. (2013) paper each sentence region had only one data point from each participant. Therefore, we average the residual reading times of the sentences for each sentence region per congruency condition per participant.
 
 ```{r}
 residual_reading_time_incon_aggregated <-

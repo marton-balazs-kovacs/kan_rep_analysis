@@ -23,13 +23,134 @@ source("utils.R")
 ```
 
 # Exp1
+## Outcome neutral test
+### Test sentence reading time
+#### Import data
+
+```{r}
+outcome_neutral_sentence_data <- read_tsv("Data/Processed/Exp1/Kan_Processed_Exp1_OutcomeNeutral_Sentence_data.tsv")
+```
+
+#### Nest the data
+
+```{r}
+outcome_neutral_sentence_data <-
+  outcome_neutral_sentence_data %>% 
+  nest(data = c(participant_id, Congruent, Incongruent))
+```
+
+#### Performing the t-tests
+
+We calculate the t test for each sentence region separately.
+
+```{r}
+outcome_neutral_sentence_data <-
+  outcome_neutral_sentence_data %>% 
+  mutate(t_value = map_dbl(data,
+                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "less") %>% 
+                         broom::tidy() %>% 
+                         pull(statistic)),
+         df = map_dbl(data,
+                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "less") %>% 
+                         broom::tidy() %>% 
+                         pull(parameter)),
+         p_value = map_dbl(data,
+                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "less") %>% 
+                         broom::tidy() %>% 
+                         pull(p.value)),
+         raw_effect = map_dbl(data,
+                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "less") %>% 
+                         broom::tidy() %>% 
+                         pull(estimate)))
+```
+
+#### Calculating the SE
+
+```{r}
+outcome_neutral_sentence_data <-
+  outcome_neutral_sentence_data %>% 
+  mutate(se = map2_dbl(raw_effect, t_value,
+                       ~ abs(.x / .y)))
+```
+
+#### Calculating the Bayes factor
+
+We are calculating the Bf for all the regions, but our main interest is the the temporarily ambiguous and disambiguating region.
+
+Checking the number of observations for each sentence region.
+#TODO: this should be equal for all regions.
+
+```{r}
+map(outcome_neutral_sentence_data$data, nrow)
+```
+
+Creating a plots to visualize the difference.
+
+We are creating a plot function for visualization.
+
+```{r}
+sentence_region_plot <- function(df, name) {
+  df %>%
+  select(Congruent, Incongruent) %>% 
+  gather(key = "congruency", value = "resid_mean_reading_time") %>%  
+  group_by(congruency) %>% 
+  summarise(n = n(),
+            mean = mean(resid_mean_reading_time),
+            sd = sd(resid_mean_reading_time, na.rm = T),
+            se = sd / sqrt(n)) %>% 
+  ggplot() +
+  aes(x = congruency,
+      y = mean) +
+  geom_point(size = 6) +
+  geom_errorbar(aes(ymin = mean - (se * 1.96),
+                    ymax = mean + (se  * 1.96)),
+                width = .1) +
+  labs(title = paste("Sentence region no:", name),
+       x = "Congruency of the sentence region",
+       y = "Mean residual reading time") +
+  theme_minimal() +
+  theme(axis.title = element_text(size = 25),
+        axis.text = element_text(size = 20),
+        strip.text.x = element_text(size = 20))
+}
+
+outcome_neutral_sentence_data <- 
+  outcome_neutral_sentence_data %>% 
+  mutate(sentence_plot = map2(data, as.character(sentence_region_no), 
+                     ~ sentence_region_plot(.x, .y)))
+```
+
+Assigning SD theory for the Bayes factor analysis.
+
+```{r}
+outcome_neutral_sentence_data <- 
+  outcome_neutral_sentence_data %>% 
+  mutate(sd_theory = case_when(sentence_region_no == 3 ~ 40L,
+                               sentence_region_no == 4 ~ 18L,
+                               TRUE ~ 18L))
+```
+
+Running the Bf analysis for all sentence regions.
+
+```{r}
+outcome_neutral_sentence_data <- 
+  outcome_neutral_sentence_data %>% 
+  mutate(bf = pmap_dbl(list(se, raw_effect, df, sd_theory),
+                       ~ Bf(sd = ..1,
+                            obtained = ..2,
+                            dfdata = ..3,
+                            meanoftheory = 0,
+                            sdtheory = ..4,
+                            dftheory = 10^10,
+                            tail = 1)))
+```
+
 ## Crucial tests
 ### Reaction time analysis
 #### Import data
 
 ```{r}
-main_analysis_rt_data <-
-  read_tsv("Data/Processed/Exp1/Kan_Processed_Exp1_Main_Rt_data.tsv")
+main_analysis_rt_data <- vroom::vroom("Data/Processed/Exp1/Kan_Processed_Exp1_Main_Rt_data.tsv")
 ```
 
 #### Exploratory data analysis
@@ -38,13 +159,12 @@ The number of response per participant.
 
 ```{r}
 main_analysis_rt_data %>% 
-  group_by(participant_id) %>% 
-  count()
+  count(participant_id)
 ```
 
 #### Figures
 
-The congruency sequency effect for the reaction time responses.
+The congruency sequence effect for the reaction time responses.
 
 ```{r}
 main_analysis_rt_data %>% 
@@ -66,8 +186,8 @@ main_analysis_rt_data %>%
       group = is_congruent) +
   geom_path() +
   geom_point(size = 6) +
-  geom_errorbar(aes(ymin = mean_rt - se_rt,
-                    ymax = mean_rt + se_rt),
+  geom_errorbar(aes(ymin = mean_rt - (se_rt * 1.96),
+                    ymax = mean_rt + (se_rt * 1.96)),
                 width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
@@ -89,7 +209,7 @@ ggsave("Figures/Kan_Exp1_Rt_Congruency_Plot.png", width = 14.4, height = 8, plot
 
 #### Data preprocessing
 
-We are calucalting the mean reaction time per participant per condition (ci, ic, cc, ii).
+We are calculating the mean reaction time per participant per condition (ci, ic, cc, ii).
 
 ```{r}
 main_analysis_rt_aggregate <-
@@ -102,12 +222,11 @@ main_analysis_rt_aggregate <-
          participant_id = as.factor(participant_id))
 ```
 
-The number of conditions per participant. Because we excluded the incorrect trials, it can happen that a participant does no have reeaction time responses from all the 4 conditions.
+The number of conditions per participant. Because we excluded the incorrect trials, it can happen that a participant does no have reaction time responses from all the 4 conditions.
 
 ```{r}
 main_analysis_rt_aggregate %>% 
-  group_by(participant_id) %>% 
-  count() %>% 
+  count(participant_id) %>% 
   arrange(n)
 ```
 
@@ -116,8 +235,7 @@ Save the [participant_id] of those participants who do not have data from all th
 ```{r}
 missing_condition <-
   main_analysis_rt_aggregate %>% 
-  group_by(participant_id) %>% 
-  count() %>% 
+  count(participant_id) %>% 
   filter(n != 4) %>%
   select(participant_id)
 ```
@@ -125,9 +243,7 @@ missing_condition <-
 The number of participants who has missing conditions.
 
 ```{r}
-missing_condition %>%
-  ungroup() %>% 
-  count()
+nrow(missing_condition)
 ```
 
 Excluding these participants from further analysis.
@@ -138,7 +254,7 @@ main_analysis_rt_aggregate <-
   anti_join(., missing_condition, by = "participant_id")
 ```
 
-Calucalting the raw congruency, previous congruency and interaction effect for each participant.
+Calculating the raw congruency, previous congruency and interaction effect for each participant.
 
 ```{r}
 main_analysis_rt_raw_effect <-
@@ -170,8 +286,8 @@ anova_rt_f_value <-
   anova_rt %>% 
   broom::tidy() %>% 
   select(term, statistic) %>% 
-  transmute(term = case_when(term == "is_congruent" ~ "main_effect_is_congruent",
-                             term == "is_previous_congruent" ~ "main_effect_is_previous_congruent",
+  transmute(term = case_when(term == "is_congruent" ~ "main_effect_congruency",
+                             term == "is_previous_congruent" ~ "main_effect_previous_congruency",
                              term == "is_congruent:is_previous_congruent" ~ "interaction_effect",
                              term == "Residuals" ~ term),
             f_value = statistic) %>% 
@@ -183,8 +299,8 @@ Calculating the raw effects summarized for every participant.
 ```{r}
 main_analysis_rt_raw_effect <-
   main_analysis_rt_raw_effect %>% 
-  summarise(main_effect_is_congruent = mean(congruency_effect, na.rm = T),
-            main_effect_is_previous_congruent = mean(previous_congruency_effect, na.rm = T),
+  summarise(main_effect_congruency = mean(congruency_effect, na.rm = T),
+            main_effect_previous_congruency = mean(previous_congruency_effect, na.rm = T),
             interaction_effect = mean(interaction_effect, na.rm = T),
             n_participant = n()) %>%
   gather(key = "term", value = "raw_effect", -n_participant)
@@ -198,7 +314,7 @@ main_analysis_rt_raw_effect <-
   inner_join(., anova_rt_f_value, by = "term")
 ```
 
-Caclulating the SE from the raw effect and the F value.
+Calculating the SE from the raw effect and the F value.
 
 ```{r}
 main_analysis_rt_raw_effect <-
@@ -242,13 +358,42 @@ Bf(sd = interaction_se,
    tail = 1)
 ```
 
-#### Testing the results
+#### Test Stroop effect
 
-In order to test the result of the ANOVA we are calculating the F value from a t value.
+This is an outcome neutral test, therefore, the results of this test do not effect our main conclusions.
+
+Saving the values needed for the analysis.
 
 ```{r}
-# (ci -cc) - (ii-ic)
-# (ci + ii / 2) - (cc + ic / 2)
+# Obtained sd
+main_se <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_congruency") %>% 
+  pull(se)
+
+# Obtained effect
+main_effect <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_congruency") %>% 
+  pull(raw_effect)
+
+# Df
+main_df <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_congruency") %>% 
+  pull(n_participant)
+```
+
+Running the Bf analysis with the model described in the paper.
+
+```{r}
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df - 1,
+   meanoftheory = 0,
+   sdtheory = 28,
+   dftheory = 10^10,
+   tail = 1)
 ```
 
 ### Accuracy analysis
@@ -308,8 +453,8 @@ main_analysis_acc_data %>%
       group = is_congruent) +
   geom_path() +
   geom_point(size = 6) +
-  geom_errorbar(aes(ymin = mean_acc - se_acc,
-                    ymax = mean_acc + se_acc),
+  geom_errorbar(aes(ymin = mean_acc - (se_acc * 1.96),
+                    ymax = mean_acc + (se_acc * 1.96)),
                 width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
@@ -373,8 +518,8 @@ anova_acc_f_value <-
   filter(Effect %in% c("is_congruent",
                        "is_previous_congruent",
                        "is_congruent:is_previous_congruent")) %>% 
-  transmute(term = case_when(Effect == "is_congruent" ~ "main_effect_congruent",
-                             Effect == "is_previous_congruent" ~ "main_effect_previous_congruent",
+  transmute(term = case_when(Effect == "is_congruent" ~ "main_effect_congruency",
+                             Effect == "is_previous_congruent" ~ "main_effect_previous_congruency",
                              Effect == "is_congruent:is_previous_congruent" ~ "interaction_effect"),
             f_value = F,
             df = DFd)
@@ -393,7 +538,7 @@ main_analysis_acc_participant_level_raw_effect <-
                                TRUE ~ NA_character_)) %>% 
   select(-is_previous_congruent, -is_congruent) %>% 
   spread(key = condition, value = acc_conditional_mean) %>% 
-  mutate(congruency_effect = ((ci + ii) / 2) - ((cc + ic) / 2),
+  mutate(congruency_effect =  ((cc + ic) / 2) - ((ci + ii) / 2),
          previous_congruency_effect = ((ci + cc) / 2) - ((ii + ic) / 2),
          interaction_effect = (cc - ci) - (ic - ii))
 ```
@@ -403,8 +548,8 @@ We are aggregating the raw effects of the participants.
 ```{r}
 main_analysis_acc_raw_effect <-
   main_analysis_acc_participant_level_raw_effect %>% 
-  summarise(main_effect_congruent = mean(congruency_effect, na.rm = T),
-            main_effect_previous_congruent = mean(previous_congruency_effect, na.rm = T),
+  summarise(main_effect_congruency = mean(congruency_effect, na.rm = T),
+            main_effect_previous_congruency = mean(previous_congruency_effect, na.rm = T),
             interaction_effect = mean(interaction_effect, na.rm = T)) %>%  
   gather(key = "term", value = "raw_effect")
 ```
@@ -461,222 +606,6 @@ Bf(sd = interaction_se,
    tail = 1)
 ```
 
-## outcome neutral test
-### Test Stroop effect
-
-Saving the values needed for the analysis.
-
-```{r}
-# Obtained sd
-main_se <- 
-  main_analysis_rt_raw_effect %>% 
-  filter(term == "main_effect_congruent") %>% 
-  pull(se)
-
-# Obtained effect
-main_effect <- 
-  main_analysis_rt_raw_effect %>% 
-  filter(term == "main_effect_congruent") %>% 
-  pull(raw_effect)
-
-# Df
-main_df <- 
-  main_analysis_rt_raw_effect %>% 
-  filter(term == "main_effect_congruent") %>% 
-  pull(n_participant)
-```
-
-Running the Bf analysis with the model described in the paper.
-
-```{r}
-Bf(sd = main_se,
-   obtained = main_effect,
-   dfdata = main_df - 1,
-   meanoftheory = 0,
-   sdtheory = 28,
-   dftheory = 10^10,
-   tail = 1)
-```
-
-### Test sentence reading time
-#### Import data
-
-```{r}
-outcome_neutral_sentence_data <- read_tsv("Data/Processed/Exp1/Kan_Processed_Exp1_OutcomeNeutral_Sentence_data.tsv")
-```
-
-#### Nest the data
-
-```{r}
-outcome_neutral_sentence_data <-
-  outcome_neutral_sentence_data %>% 
-  nest(data = c(participant_id, Congruent, Incongruent))
-```
-
-#### Performing the t-tests
-
-We calculate the t test for each sentence region separately.
-
-```{r}
-outcome_neutral_sentence_data <-
-  outcome_neutral_sentence_data %>% 
-  mutate(t_value = map_dbl(data,
-                       ~ t.test(.$Congruent, .$Incongruent, paired = TRUE, alternative = "less") %>% 
-                         broom::tidy() %>% 
-                         pull(statistic)),
-         df = map_dbl(data,
-                       ~ t.test(.$Congruent, .$Incongruent, paired = TRUE, alternative = "less") %>% 
-                         broom::tidy() %>% 
-                         pull(parameter)),
-         p_value = map_dbl(data,
-                       ~ t.test(.$Congruent, .$Incongruent, paired = TRUE, alternative = "less") %>% 
-                         broom::tidy() %>% 
-                         pull(p.value)),
-         raw_effect = map_dbl(data,
-                       ~ t.test(.$Congruent, .$Incongruent, paired = TRUE, alternative = "less") %>% 
-                         broom::tidy() %>% 
-                         pull(estimate)))
-```
-
-#### Calculating the SE
-
-```{r}
-outcome_neutral_sentence_data <-
-  outcome_neutral_sentence_data %>% 
-  mutate(se = map2_dbl(t_value, raw_effect,
-                       ~ abs(.x / .y)))
-```
-
-#### Calculating the Bayes factor
-
-We are calculating the Bf for only the temporarly ambiguous and disambiguating region.
-
-```{r}
-temp_ambig <- 
-  outcome_neutral_sentence_data %>% 
-  filter(sentence_region_type == "temporarly ambiguous")
-
-disambig <- 
-  outcome_neutral_sentence_data %>% 
-  filter(sentence_region_type == "disambiguating ambiguous")
-```
-
-Creating a plots to visualize the difference.
-
-```{r}
-temp_ambig %>% 
-  unnest(data) %>%
-  select(Congruent, Incongruent) %>% 
-  gather(key = "congruency", value = "resid_mean_reading_time") %>%  
-  group_by(congruency) %>% 
-  summarise(n = n(),
-            mean = mean(resid_mean_reading_time),
-            sd = sd(resid_mean_reading_time, na.rm = T),
-            se = sd / sqrt(n)) %>% 
-  ggplot() +
-  aes(x = congruency,
-      y = mean) +
-  geom_point(size = 6) +
-  geom_errorbar(aes(ymin = mean - se,
-                    ymax = mean + se),
-                width = .1) +
-  xlab("Congruency of the sentence region")+
-  ylab("Mean residual reading time") +
-  theme_minimal() +
-  theme(axis.title = element_text(size = 25),
-        axis.text = element_text(size = 20),
-        strip.text.x = element_text(size = 20))
-```
-
-Assignig variables to calculate bayes factor for the temporarly ambiguous region.
-
-```{r}
-# sd
-rt_sd <- 
-  temp_ambig %>% 
-  pull(se)
-
-# obtained
-rt_obtained <- 
-  temp_ambig %>% 
-  pull(raw_effect)
-
-# df
-rt_df <- 
-  temp_ambig %>% 
-  pull(df)
-```
-
-Running the Bf analysis for the temporarly ambiguous region.
-
-```{r}
-Bf(sd = rt_sd,
-   obtained = rt_obtained,
-   dfdata = rt_df,
-   meanoftheory = 0,
-   sdtheory = 40,
-   dftheory = 10^10,
-   tail = 1)
-```
-
-Creating a plots to visualize the difference.
-
-```{r}
-disambig %>% 
-  unnest(data) %>%
-  select(Congruent, Incongruent) %>% 
-  gather(key = "congruency", value = "resid_mean_reading_time") %>%  
-  group_by(congruency) %>% 
-  summarise(n = n(),
-            mean = mean(resid_mean_reading_time),
-            sd = sd(resid_mean_reading_time, na.rm = T),
-            se = sd / sqrt(n)) %>% 
-  ggplot() +
-  aes(x = congruency,
-      y = mean) +
-  geom_point(size = 6) +
-  geom_errorbar(aes(ymin = mean - se,
-                    ymax = mean + se),
-                width = .1) +
-  xlab("Congruency of the sentence region")+
-  ylab("Mean residual reading time") +
-  theme_minimal() +
-  theme(axis.title = element_text(size = 25),
-        axis.text = element_text(size = 20),
-        strip.text.x = element_text(size = 20))
-```
-
-Assignig variables to calculate bayes factor for the disambiguating region.
-
-```{r}
-# sd
-rt_sd <- 
-  disambig %>% 
-  pull(se)
-
-# obtained
-rt_obtained <- 
-  disambig %>% 
-  pull(raw_effect)
-
-# df
-rt_df <- 
-  disambig %>% 
-  pull(df)
-```
-
-Running the Bf analysis for the disambiguating region.
-
-```{r}
-Bf(sd = rt_sd,
-   obtained = rt_obtained,
-   dfdata = rt_df,
-   meanoftheory = 0,
-   sdtheory = 18,
-   dftheory = 10^10,
-   tail = 1)
-```
-
 ***
 
 # Exp 2
@@ -694,13 +623,22 @@ The number of response per participant.
 
 ```{r}
 main_analysis_rt_data %>% 
-  group_by(participant_id) %>% 
-  count()
+  count(participant_id)
+```
+
+Comparing the descriptive statistics of the low and high reversal groups. These values are calculated from the mean number of reversals for each participant. The calculation based on trial level reversal times can be found in the **Kan_Raw_Processed** file.
+
+```{r}
+main_analysis_rt_data %>% 
+  group_by(reversal_group) %>% 
+  summarise(n = n(),
+            all_mean_reversal = mean(mean_reversal),
+            all_sd_reversal = sd(mean_reversal, na.rm = TRUE))
 ```
 
 ### Figures
 
-The congruency sequency effect for the reaction time responses with reversal groups.
+The congruency sequence effect for the reaction time responses with reversal groups.
 
 ```{r}
 main_analysis_rt_data %>% 
@@ -724,9 +662,9 @@ main_analysis_rt_data %>%
       group = is_congruent) +
   geom_path() +
   geom_point(size = 6) +
-  geom_errorbar(aes(ymin = mean_rt - se_rt,
-                    ymax = mean_rt + se_rt),
-                width=.1) +
+  geom_errorbar(aes(ymin = mean_rt - (se_rt * 1.96),
+                    ymax = mean_rt + (se_rt * 1.96)),
+                width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
   ylab("Reaction time") +
@@ -747,7 +685,7 @@ Saving the figure.
 ggsave("Figures/Kan_Exp2_Cse_Rev_Plot.png", width = 14.4, height = 8, plot = last_plot())
 ```
 
-The congruency sequency effect for the reaction time responses.
+The congruency sequence effect for the reaction time responses. without reversal groups.
 
 ```{r}
 main_analysis_rt_data %>% 
@@ -769,8 +707,8 @@ main_analysis_rt_data %>%
       group = is_congruent) +
   geom_path() +
   geom_point(size = 6) +
-  geom_errorbar(aes(ymin = mean_rt - se_rt,
-                    ymax = mean_rt + se_rt),
+  geom_errorbar(aes(ymin = mean_rt - (se_rt * 1.96),
+                    ymax = mean_rt + (se_rt * 1.96)),
                 width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
@@ -791,9 +729,154 @@ ggsave("Figures/Kan_Exp2_Cse_Plot.png", width = 14.4, height = 8, plot = last_pl
 ```
 
 ### Crucial tests
+### Two way interaction
 #### Data preprocessing
 
-We are calucalting the mean reaction time per participant per condition (ci, ic, cc, ii).
+We are calculating the mean reaction time per participant per condition (ci, ic, cc, ii).
+
+```{r}
+main_analysis_rt_aggregate <-
+  main_analysis_rt_data %>% 
+  group_by(participant_id, is_congruent, is_previous_congruent) %>% 
+  summarise(rt_conditional_mean = mean(response_time, na.rm = T)) %>%
+  ungroup()
+```
+
+Before the ANOVA we transform the predictor variables to factors.
+
+```{r}
+main_analysis_rt_aggregate <-
+  main_analysis_rt_aggregate %>%
+    mutate(is_congruent = as.factor(is_congruent),
+           is_previous_congruent = as.factor(is_previous_congruent),
+           participant_id = as.factor(participant_id))
+```
+
+The number of participants for the rt analysis.
+
+```{r}
+main_analysis_rt_aggregate %>% 
+  distinct(participant_id) %>% 
+  count()
+```
+
+We are running the ANOVA.
+
+```{r}
+anova_rt <-
+  ezANOVA(data = main_analysis_rt_aggregate, dv = rt_conditional_mean, wid = participant_id, within = .(is_congruent, is_previous_congruent), type = 3)
+```
+
+Transforming the results of the ANOVA to a datatable.
+
+```{r}
+anova_rt <-
+  as_tibble(anova_rt$ANOVA)
+```
+
+Extracting the F value and df from the ANOVA.
+
+```{r}
+anova_rt_f_value <-
+  anova_rt %>% 
+  filter(Effect %in% c("is_congruent",
+                       "is_previous_congruent",
+                       "is_congruent:is_previous_congruent")) %>% 
+  transmute(term = case_when(Effect == "is_congruent" ~ "main_effect_congruent",
+                             Effect == "is_previous_congruent" ~ "main_effect_previous_congruent",
+                             Effect == "is_congruent:is_previous_congruent" ~ "interaction_effect"),
+            f_value = F,
+            df = DFd)
+```
+
+Calculating the raw effects per participant.
+
+```{r}
+main_analysis_rt_participant_level_raw_effect <-
+  main_analysis_rt_aggregate %>% 
+  ungroup() %>% 
+  mutate(condition = case_when(is_previous_congruent == 0L & is_congruent == 0L ~ "ii",
+                               is_previous_congruent == 0L & is_congruent == 1L ~ "ic",
+                               is_previous_congruent == 1L & is_congruent == 0L ~ "ci",
+                               is_previous_congruent == 1L & is_congruent == 1L ~ "cc",
+                               TRUE ~ NA_character_)) %>% 
+  select(-is_previous_congruent, -is_congruent) %>% 
+  spread(key = condition, value = rt_conditional_mean) %>% 
+  mutate(congruency_effect = ((ci + ii) / 2) - ((cc + ic) / 2),
+         previous_congruency_effect = ((ii + ic) / 2) - ((ci + cc) / 2),
+         interaction_effect = (ci - cc) - (ii - ic),
+         prev_cong = ci - cc,
+         prev_incon = ii - ic,
+         current_incongruent = ci - ii)
+```
+
+We are calculating the mean raw effect sizes.
+
+```{r}
+main_analysis_rt_raw_effect <-
+  main_analysis_rt_participant_level_raw_effect %>% 
+  summarise(main_effect_congruent = mean(congruency_effect, na.rm = T),
+            main_effect_previous_congruent = mean(previous_congruency_effect, na.rm = T),
+            interaction_effect = mean(interaction_effect, na.rm = T),
+            prev_cong_mean = mean(prev_cong, na.rm = T),
+            prev_incon_mean = mean(prev_incon, na.rm = T)) %>%  
+  gather(key = "term", value = "raw_effect")
+```
+
+We are joining the F values and dfs with the raw effect sizes.
+
+```{r}
+main_analysis_rt_raw_effect <-
+  main_analysis_rt_raw_effect %>%
+  inner_join(., anova_rt_f_value, by = "term")
+```
+
+We are calculating the SE from the raw effect size and F value.
+
+```{r}
+main_analysis_rt_raw_effect <-
+  main_analysis_rt_raw_effect %>% 
+  mutate(se = abs(raw_effect / sqrt(f_value)))
+```
+
+Assigning variables to calculate Bayes factor.
+
+```{r}
+# sd
+rt_sd <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "interaction_effect") %>% 
+  pull(se)
+
+# obtained
+rt_obtained <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "interaction_effect") %>% 
+  pull(raw_effect)
+
+# df
+rt_df <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "interaction_effect") %>% 
+  pull(df)
+```
+
+Running the Bf analysis.
+
+```{r}
+Bf(sd = rt_sd,
+   obtained = rt_obtained,
+   dfdata = rt_df,
+   meanoftheory = 0,
+   sdtheory = 30,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+### Three way interaction
+#### Data preprocessing
+
+We are calculating the mean reaction time per participant per condition (ci, ic, cc, ii).
 
 ```{r}
 main_analysis_rt_aggregate <-
@@ -837,7 +920,7 @@ anova_rt <-
   ezANOVA(data = main_analysis_rt_aggregate, dv = rt_conditional_mean, wid = participant_id, within = .(is_congruent, is_previous_congruent), between = reversal_group, type = 3)
 ```
 
-Transfroming the results of the ANOVA to a datatable.
+Transforming the results of the ANOVA to a datatable.
 
 ```{r}
 anova_rt <-
@@ -1068,9 +1151,9 @@ main_analysis_acc %>%
       group = is_congruent) +
   geom_path() +
   geom_point(size = 4) +
-  geom_errorbar(aes(ymin = mean_acc - se_acc,
-                    ymax = mean_acc + se_acc),
-                width=.1) +
+  geom_errorbar(aes(ymin = mean_acc - (se_acc * 1.96),
+                    ymax = mean_acc + (se_acc * 1.96)),
+                width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
   ylab("Accuracy") +
@@ -1113,8 +1196,8 @@ main_analysis_acc %>%
       group = is_congruent) +
   geom_path() +
   geom_point(size = 4) +
-  geom_errorbar(aes(ymin = mean_acc - se_acc,
-                    ymax = mean_acc + se_acc),
+  geom_errorbar(aes(ymin = mean_acc - (se_acc * 1.96),
+                    ymax = mean_acc + (se_acc * 1.96)),
                 width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
@@ -1136,6 +1219,139 @@ ggsave("Figures/Kan_Exp2_Acc_Cse_Plot.png", width = 14.4, height = 8, plot = las
 ```
 
 ### Crucial tests
+### Two way interaction
+#### Data preprocessing
+
+we are calculating the conditional mean of the correct trials per particpant and per condition (CC, II, CI, IC).
+
+```{r}
+main_analysis_acc_aggregate <-
+  main_analysis_acc %>% 
+  group_by(participant_id, is_congruent, is_previous_congruent) %>% 
+  summarise(acc_conditional_mean = mean(is_correct, na.rm = T)) %>% 
+  ungroup()
+```
+
+Transfer independent variables used in the ANOVA to factors.
+
+```{r}
+main_analysis_acc_aggregate <-
+  main_analysis_acc_aggregate %>% 
+  mutate(is_congruent = as_factor(is_congruent),
+         is_previous_congruent = as_factor(is_previous_congruent),
+         participant_id = as_factor(participant_id))
+```
+
+Running the mixed ANOVA.
+
+```{r}
+anova_acc <-
+  ezANOVA(data = main_analysis_acc_aggregate, dv = acc_conditional_mean, wid = participant_id, within = .(is_congruent, is_previous_congruent), type = 3)
+```
+
+Transforming the output of the ANOVA to a tibble.
+
+```{r}
+anova_acc <-
+  as_tibble(anova_acc$ANOVA)
+```
+
+Extract the F value and df2 from the ANOVA.
+
+```{r}
+anova_acc_f_value <-
+  anova_acc %>% 
+  filter(Effect %in% c("is_congruent",
+                       "is_previous_congruent",
+                       "is_congruent:is_previous_congruent")) %>% 
+  transmute(term = case_when(Effect == "is_congruent" ~ "main_effect_congruent",
+                             Effect == "is_previous_congruent" ~ "main_effect_previous_congruent",
+                             Effect == "is_congruent:is_previous_congruent" ~ "interaction_effect"),
+            f_value = F,
+            df = DFd)
+```
+
+We calculate the raw effects per participant.
+
+```{r}
+main_analysis_acc_participant_level_raw_effect <-
+  main_analysis_acc_aggregate %>% 
+  ungroup() %>% 
+  mutate(condition = case_when(is_previous_congruent == 0L & is_congruent == 0L ~ "ii",
+                               is_previous_congruent == 0L & is_congruent == 1L ~ "ic",
+                               is_previous_congruent == 1L & is_congruent == 0L ~ "ci",
+                               is_previous_congruent == 1L & is_congruent == 1L ~ "cc",
+                               TRUE ~ NA_character_)) %>% 
+  select(-is_previous_congruent, -is_congruent) %>% 
+  spread(key = condition, value = acc_conditional_mean) %>% 
+  mutate(congruency_effect = ((cc + ic) / 2) - ((ci + ii) / 2),
+         previous_congruency_effect = ((ci + cc) / 2) - ((ii + ic) / 2),
+         interaction_effect = (cc - ci) - (ic - ii),
+         current_incongruent = ii - ci)
+```
+
+We summarize the participant level data for further analysis.
+
+```{r}
+main_analysis_acc_raw_effect <-
+  main_analysis_acc_participant_level_raw_effect %>% 
+  summarise(main_effect_congruent = mean(congruency_effect, na.rm = T),
+            main_effect_previous_congruent = mean(previous_congruency_effect, na.rm = T),
+            interaction_effect = mean(interaction_effect, na.rm = T)) %>%  
+  gather(key = "term", value = "raw_effect")
+```
+
+We join the calculated raw effects with the F value and the df from the ANOVA.
+
+```{r}
+main_analysis_acc_raw_effect <-
+  main_analysis_acc_raw_effect %>%
+  inner_join(., anova_acc_f_value, by = "term")
+```
+
+We valvulate the SE corresponding to the raw effects.
+
+```{r}
+main_analysis_acc_raw_effect <-
+  main_analysis_acc_raw_effect %>% 
+  mutate(se = abs(raw_effect / sqrt(f_value)))
+```
+
+Saving values needed for the Bayes factor analysis.
+
+```{r}
+# SE
+acc_sd <-
+  main_analysis_acc_raw_effect %>% 
+  filter(term == "interaction_effect") %>% 
+  pull(se)
+
+# Raw effect
+acc_obtained <-
+  main_analysis_acc_raw_effect %>% 
+  filter(term == "interaction_effect") %>% 
+  pull(raw_effect)
+
+# Degrees of freedom
+acc_df <-
+  main_analysis_acc_raw_effect %>% 
+  filter(term == "interaction_effect") %>% 
+  pull(df)
+```
+
+Calculating the Bayes factor.
+
+```{r}
+Bf(sd = acc_sd,
+   obtained = acc_obtained,
+   dfdata = acc_df,
+   meanoftheory = 0,
+   sdtheory = .03,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+### Three way interaction
 #### Data preprocessing
 
 we are calculating the conditional mean of the correct trials per particpant and per condition (CC, II, CI, IC).
@@ -1398,8 +1614,8 @@ main_analysis_rt_data %>%
       group = is_congruent) +
   geom_path() +
   geom_point(size = 6) +
-  geom_errorbar(aes(ymin = mean_rt - se_rt,
-                    ymax = mean_rt + se_rt),
+  geom_errorbar(aes(ymin = mean_rt - (se_rt * 1.96),
+                    ymax = mean_rt + (se_rt * 1.96)),
                 width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
@@ -1608,8 +1824,8 @@ main_analysis_acc %>%
       group = is_congruent) +
   geom_path() +
   geom_point(size = 4) +
-  geom_errorbar(aes(ymin = mean_acc - se_acc,
-                    ymax = mean_acc + se_acc),
+  geom_errorbar(aes(ymin = mean_acc - (se_acc * 1.96),
+                    ymax = mean_acc + (se_acc * 1.96)),
                 width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
