@@ -683,7 +683,7 @@ main_analysis_rt_data %>%
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp2_Cse_Rev_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp2_Rt_Cse_Rev_Plot.png", width = 14.4, height = 8, plot = last_plot())
 ```
 
 The congruency sequence effect for the reaction time responses without reversal groups.
@@ -726,7 +726,7 @@ main_analysis_rt_data %>%
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp2_Cse_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp2_Rt_Cse_Plot.png", width = 14.4, height = 8, plot = last_plot())
 ```
 
 ### Crucial tests
