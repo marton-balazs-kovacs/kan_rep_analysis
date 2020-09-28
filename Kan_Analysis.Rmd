@@ -7,7 +7,7 @@ output: html_document
 
 # Load packages
 
-```{r}
+```{r, message = FALSE, warning = FALSE}
 library(tidyverse)
 library(osfr)
 library(readxl)
@@ -117,6 +117,8 @@ outcome_neutral_sentence_data <-
   outcome_neutral_sentence_data %>% 
   mutate(sentence_plot = map2(data, as.character(sentence_region_no), 
                      ~ sentence_region_plot(.x, .y)))
+
+outcome_neutral_sentence_data$sentence_plot
 ```
 
 Assigning SD theory for the Bayes factor analysis.
@@ -159,6 +161,14 @@ The number of response per participant.
 ```{r}
 main_analysis_rt_data %>% 
   count(participant_id)
+```
+
+The number of participants.
+
+```{r}
+main_analysis_rt_data %>% 
+  distinct(participant_id) %>% 
+  count()
 ```
 
 #### Figures
@@ -413,9 +423,17 @@ main_analysis_acc_data %>%
   count()
 ```
 
+The number of participants.
+
+```{r}
+main_analysis_acc_data %>% 
+  distinct(participant_id) %>% 
+  count()
+```
+
 #### The distribution of hit rates
 
-Caculating the hit rate for each participant.
+Calculating the hit rate for each participant.
 
 ```{r}
 main_analysis_acc_data %>% 
@@ -625,6 +643,14 @@ The number of response per participant.
 ```{r}
 main_analysis_rt_data %>% 
   count(participant_id)
+```
+
+The number of participants.
+
+```{r}
+main_analysis_rt_data %>% 
+  distinct(participant_id) %>% 
+  count()
 ```
 
 Comparing the descriptive statistics of the low and high reversal groups. These values are calculated from the mean number of reversals for each participant. The calculation based on trial level reversal times can be found in the **Kan_Raw_Processed** file.
@@ -1121,6 +1147,14 @@ main_analysis_acc %>%
   count()
 ```
 
+The number of participants.
+
+```{r}
+main_analysis_acc %>% 
+  distinct(participant_id) %>% 
+  count()
+```
+
 The number and frequency of correct trials. There are different number of trials per participant because each participant was assigned to a different set of trails (out of 6) randomly. These sets contained different number  of test trials that satisfy the criteria to be the part of the analysis.
 
 ```{r}
@@ -1593,7 +1627,7 @@ main_analysis_rt_data %>%
 The number of participants.
 
 ```{r}
-main_analysis_rt_aggregate %>% 
+main_analysis_rt_data %>% 
   distinct(participant_id) %>% 
   count()
 ```
@@ -1797,7 +1831,7 @@ main_analysis_acc %>%
   group_by(participant_id) %>% 
   mutate(sum_n = sum(n),
          freq = n / sum_n * 100) %>%
-  filter(is_correct == 1L) %>% View()
+  filter(is_correct == 1L)
 ```
 
 The number of participants.
