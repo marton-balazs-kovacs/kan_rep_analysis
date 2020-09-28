@@ -98,7 +98,7 @@ raw <- vroom::vroom("Data/Raw/Exp1/Kan_Raw_Exp1_data.tsv")
 ```{r}
 raw %>%
   distinct(filename) %>% 
-  count
+  count()
 ```
 
 ### Number of participants by lab
@@ -107,7 +107,7 @@ raw %>%
 raw %>%
   group_by(lab) %>% 
   distinct(filename) %>% 
-  count
+  count()
 ```
 
 ## Selecting only needed variables
@@ -361,6 +361,14 @@ test_raw <-
 
 ### Testing the number of responses per participant
 
+Number of participants.
+
+```{r}
+test_raw %>% 
+  distinct(participant_id) %>% 
+  count()
+```
+
 Each participant should have completed 1022 trials during the test part of the experiment.
 
 Number of responses per participant
@@ -539,7 +547,7 @@ sentence_attributes <-
 ```
 
 Join the sentence region specifications to the full dataset.
-# TODO: for some participants starting with 3018 the dataset is different and word_no and sentence_id is missing why? for most sentences it is present once but sometimes not
+
 ```{r}
 neutral_analysis_sentence <-
   neutral_analysis_sentence %>% 
@@ -769,7 +777,7 @@ residual_reading_time_con_aggregated <-
   summarise(mean_residual_reading_time = mean(residual_reading_time))
 ```
 
-Now we fit the model to the inconguent sentences to calculate the predicted reading time.
+Now we fit the model to the incongruent sentences to calculate the predicted reading time.
 
 ```{r}
 predicted_reading_time_model_incon <-
@@ -1222,7 +1230,7 @@ For the analysis we keep only the Stroop trials, that were followed by a Necker 
 
 ```{r}
 main_analysis_acc_data <-
-  main_analysis_acc_data %>% 
+  main_analysis_data %>% 
   filter(is_previous_necker == 1L)
 ```
 

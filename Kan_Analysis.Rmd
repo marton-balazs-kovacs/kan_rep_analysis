@@ -47,19 +47,19 @@ We calculate the t test for each sentence region separately.
 outcome_neutral_sentence_data <-
   outcome_neutral_sentence_data %>% 
   mutate(t_value = map_dbl(data,
-                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "less") %>% 
+                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "greater") %>% 
                          broom::tidy() %>% 
                          pull(statistic)),
          df = map_dbl(data,
-                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "less") %>% 
+                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "greater") %>% 
                          broom::tidy() %>% 
                          pull(parameter)),
          p_value = map_dbl(data,
-                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "less") %>% 
+                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "greater") %>% 
                          broom::tidy() %>% 
                          pull(p.value)),
          raw_effect = map_dbl(data,
-                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "less") %>% 
+                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "greater") %>% 
                          broom::tidy() %>% 
                          pull(estimate)))
 ```
@@ -78,7 +78,6 @@ outcome_neutral_sentence_data <-
 We are calculating the Bf for all the regions, but our main interest is the the temporarily ambiguous and disambiguating region.
 
 Checking the number of observations for each sentence region.
-#TODO: this should be equal for all regions.
 
 ```{r}
 map(outcome_neutral_sentence_data$data, nrow)
@@ -286,8 +285,8 @@ anova_rt_f_value <-
   anova_rt %>% 
   broom::tidy() %>% 
   select(term, statistic) %>% 
-  transmute(term = case_when(term == "is_congruent" ~ "main_effect_congruency",
-                             term == "is_previous_congruent" ~ "main_effect_previous_congruency",
+  transmute(term = case_when(term == "is_congruent" ~ "main_effect_congruent",
+                             term == "is_previous_congruent" ~ "main_effect_previous_congruent",
                              term == "is_congruent:is_previous_congruent" ~ "interaction_effect",
                              term == "Residuals" ~ term),
             f_value = statistic) %>% 
@@ -299,8 +298,8 @@ Calculating the raw effects summarized for every participant.
 ```{r}
 main_analysis_rt_raw_effect <-
   main_analysis_rt_raw_effect %>% 
-  summarise(main_effect_congruency = mean(congruency_effect, na.rm = T),
-            main_effect_previous_congruency = mean(previous_congruency_effect, na.rm = T),
+  summarise(main_effect_congruent = mean(congruency_effect, na.rm = T),
+            main_effect_previous_congruent = mean(previous_congruency_effect, na.rm = T),
             interaction_effect = mean(interaction_effect, na.rm = T),
             n_participant = n()) %>%
   gather(key = "term", value = "raw_effect", -n_participant)
@@ -368,19 +367,19 @@ Saving the values needed for the analysis.
 # Obtained sd
 main_se <- 
   main_analysis_rt_raw_effect %>% 
-  filter(term == "main_effect_congruency") %>% 
+  filter(term == "main_effect_congruent") %>% 
   pull(se)
 
 # Obtained effect
 main_effect <- 
   main_analysis_rt_raw_effect %>% 
-  filter(term == "main_effect_congruency") %>% 
+  filter(term == "main_effect_congruent") %>% 
   pull(raw_effect)
 
 # Df
 main_df <- 
   main_analysis_rt_raw_effect %>% 
-  filter(term == "main_effect_congruency") %>% 
+  filter(term == "main_effect_congruent") %>% 
   pull(n_participant)
 ```
 
@@ -518,8 +517,8 @@ anova_acc_f_value <-
   filter(Effect %in% c("is_congruent",
                        "is_previous_congruent",
                        "is_congruent:is_previous_congruent")) %>% 
-  transmute(term = case_when(Effect == "is_congruent" ~ "main_effect_congruency",
-                             Effect == "is_previous_congruent" ~ "main_effect_previous_congruency",
+  transmute(term = case_when(Effect == "is_congruent" ~ "main_effect_congruent",
+                             Effect == "is_previous_congruent" ~ "main_effect_previous_congruent",
                              Effect == "is_congruent:is_previous_congruent" ~ "interaction_effect"),
             f_value = F,
             df = DFd)
@@ -548,8 +547,8 @@ We are aggregating the raw effects of the participants.
 ```{r}
 main_analysis_acc_raw_effect <-
   main_analysis_acc_participant_level_raw_effect %>% 
-  summarise(main_effect_congruency = mean(congruency_effect, na.rm = T),
-            main_effect_previous_congruency = mean(previous_congruency_effect, na.rm = T),
+  summarise(main_effect_congruent = mean(congruency_effect, na.rm = T),
+            main_effect_previous_congruent = mean(previous_congruency_effect, na.rm = T),
             interaction_effect = mean(interaction_effect, na.rm = T)) %>%  
   gather(key = "term", value = "raw_effect")
 ```
@@ -567,7 +566,7 @@ From the raw effect and the F value we calculate the SE.
 ```{r}
 main_analysis_acc_raw_effect <-
   main_analysis_acc_raw_effect %>% 
-  mutate(se = raw_effect / sqrt(f_value))
+  mutate(se = abs(raw_effect / sqrt(f_value)))
 ```
 
 #### Running the analysis
@@ -605,6 +604,8 @@ Bf(sd = interaction_se,
    dftheory = 10^10,
    tail = 1)
 ```
+
+__Note: The accuracy main effect of the current trial was not significant in the original study so we do not attempt to replicate it.__
 
 ***
 
@@ -685,7 +686,7 @@ Saving the figure.
 ggsave("Figures/Kan_Exp2_Cse_Rev_Plot.png", width = 14.4, height = 8, plot = last_plot())
 ```
 
-The congruency sequence effect for the reaction time responses. without reversal groups.
+The congruency sequence effect for the reaction time responses without reversal groups.
 
 ```{r}
 main_analysis_rt_data %>% 
@@ -1088,6 +1089,13 @@ main_analysis_rt_cor_data %>%
         legend.position = c(.9, .3))
 ```
 
+Save the plot.
+
+```{r}
+ggsave("Figures/Kan_Exp2_Correlation_Plot.png", width = 14.4, height = 8, plot = last_plot())
+```
+
+
 Running the correlation.
 
 ```{r}
@@ -1143,7 +1151,7 @@ main_analysis_acc %>%
   summarise(N = n(),
             mean_acc = mean(par_mean_acc, na.rm = T),
             sd_acc = sd(par_mean_acc, na.rm = T),
-            se_acc = sd_acc / sqrt(N)) %>% View()
+            se_acc = sd_acc / sqrt(N)) %>%
   ggplot() +
   aes(x = is_previous_congruent,
       y =  mean_acc,
@@ -1592,7 +1600,7 @@ main_analysis_rt_aggregate %>%
 
 ### Figures
 
-The congruency sequency effect for the reaction time responses.
+The congruency sequence effect for the reaction time responses.
 
 ```{r}
 main_analysis_rt_data %>% 
@@ -1638,7 +1646,7 @@ ggsave("Figures/Kan_Exp3_Rt_Cse_Plot.png", width = 14.4, height = 8, plot = last
 ### Crucial tests
 #### Data preprocessing
 
-We are calucalting the mean reaction time per participant per condition (ci, ic, cc, ii).
+We are calculating the mean reaction time per participant per condition (ci, ic, cc, ii).
 
 ```{r}
 main_analysis_rt_aggregate <-

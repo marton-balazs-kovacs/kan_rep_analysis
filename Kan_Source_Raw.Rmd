@@ -143,7 +143,7 @@ The following variables are added to the tibbles during merging:
 * lab: Where were the data collected. Options: "Australia", "Hungary", "Singapore", "United Kingdom"
 
 ```{r}
-source <- read_bulk(directory = "Data/Source/Exp2", subdirectories = TRUE, verbose = T, fun = vroom) %>% mutate(filename = str_remove_all(File, ".*/|.csv"),
+source <- read_bulk(directory = "Data/Source/Exp2", subdirectories = TRUE, verbose = T) %>% mutate(filename = str_remove_all(File, ".*/|.csv"),
                 lab = Subdirectory) %>%
   select(-File, -Subdirectory)
 ```
@@ -175,7 +175,7 @@ source <-
   group_by(filename) %>% 
   mutate(n_row = row_number()) %>% 
   filter(n_row != 272) %>% 
-  select(-n_row)
+  select(-n_row, -comment)
 ```
 
 In two files the reversals are not recorded therefore, we drop those files from further analysis.
@@ -244,7 +244,7 @@ source <-
   group_by(filename) %>% 
   mutate(n_row = row_number()) %>% 
   filter(n_row != 272) %>% 
-  select(-n_row)
+  select(-n_row, - comment)
 ```
 
 ## Saving files
