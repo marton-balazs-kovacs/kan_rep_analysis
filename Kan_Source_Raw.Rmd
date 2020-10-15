@@ -17,7 +17,7 @@ library(osfr)
 # Load custom functions
 
 ```{r}
-source("utils.R")
+source("R/utils.R")
 ```
 
 # Download data from OSF

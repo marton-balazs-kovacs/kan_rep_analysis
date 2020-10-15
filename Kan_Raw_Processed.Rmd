@@ -21,7 +21,7 @@ library(sjmisc)
 # Load custom functions
 
 ```{r}
-source("utils.R")
+source("R/utils.R")
 ```
 
 # Download data from OSF
@@ -107,7 +107,9 @@ raw %>%
 raw %>%
   group_by(lab) %>% 
   distinct(filename) %>% 
-  count()
+  count() %>% 
+  ungroup() %>% 
+  mutate(N = sum(n))
 ```
 
 ## Selecting only needed variables
@@ -315,50 +317,6 @@ test_raw <-
          -response_time_keyboard_input_3)
 ```
 
-### Excluding participant because of the comprehension probe
-
-The data of those participants who experienced any technical problems during the experiment and of those who performed under 70% level of comprehension probe trials were not included in any of the analyses.
-Calculating the comprehension rates of each participant.
-
-```{r}
-sentence_comprehension <-
-  test_raw %>% 
-  filter(stim_type == "Question") %>% 
-  group_by(participant_id, correct) %>% 
-  count() %>% 
-  group_by(participant_id) %>% 
-  mutate(sum_n = sum(n),
-         comprehension_score = n / sum_n,
-         freq = n / sum_n * 100) %>% 
-  ungroup()
-```
-
-Descriptive statistics of those participants who scored above 50% on the sentence comprehension task.
-
-```{r}
-sentence_comprehension %>% 
-  filter(freq > 50) %>% 
-  summarise(mean_comprehension_score = mean(comprehension_score),
-            sd_comprehension_score = sd(comprehension_score))
-```
-
-Extracting the participant ids of those participants who have to be excluded because of their performance on the sentence comprehension task.
-
-```{r}
-exclude_comprehension <-
-  sentence_comprehension %>% 
-  filter(correct == 1 & freq < 70) %>% 
-  select(participant_id)
-```
-
-Excluding the participants and creating a new dataset for this analysis.
-
-```{r}
-test_raw <-
-  test_raw %>% 
-  anti_join(., exclude_comprehension, by = "participant_id")
-```
-
 ### Testing the number of responses per participant
 
 Number of participants.
@@ -419,18 +377,8 @@ main_analysis_data <-
          is_previous_correct = case_when(is_previous_sentence == 1L ~ lag(correct),
                                          TRUE ~ NA_integer_),
          is_correct = correct) %>% 
-  filter(is_previous_sentence == 1L) %>% 
+  filter(is_previous_sentence == 1L) %>%
   select(-correct, -procedure, -is_previous_sentence)
-```
-
-## Creating data for the reaction time analysis
-
-For the reaction time analysis we only keep correct sentences.
-
-```{r}
-main_analysis_rt_data <-
-  main_analysis_data %>% 
-  filter(is_correct == 1L)
 ```
 
 ### Excluding participants who has a condition with no data
@@ -439,7 +387,8 @@ The number of conditions per participant. Because we excluded the incorrect tria
 
 ```{r}
 missing_condition <-
-  main_analysis_rt_data %>% 
+  main_analysis_data %>% 
+  filter(is_correct == 1L) %>% 
   group_by(participant_id, is_congruent, is_previous_congruent) %>% 
   summarise(n = n()) %>%
   group_by(participant_id) %>% 
@@ -453,8 +402,8 @@ Excluding these participants from further analysis.
 We exclude these participants not only from the reaction time analysis but the accuracy analysis as well.
 
 ```{r}
-main_analysis_rt_data <-
-  main_analysis_rt_data %>%
+main_analysis_data <-
+  main_analysis_data %>%
   anti_join(., missing_condition, by = "participant_id")
 ```
 
@@ -462,6 +411,78 @@ The number of participants who has missing conditions:
 
 ```{r}
 count(missing_condition)
+```
+
+### Excluding participants because of the comprehension probe
+
+The data of those participants who experienced any technical problems during the experiment and of those who performed under 70% level of comprehension probe trials were not included in any of the analyses.
+Calculating the comprehension rates of each participant.
+
+As we first excluded those participants who had missing trials we exclude those first here as well so that the number of people who was excluded because of the comprehension probe test will not overlap with the former exclusion.
+
+```{r}
+sentence_comprehension <-
+  test_raw %>% 
+  anti_join(., missing_condition, by = "participant_id") %>%
+  filter(stim_type == "Question") %>% 
+  group_by(participant_id, correct) %>% 
+  count() %>% 
+  group_by(participant_id) %>% 
+  mutate(sum_n = sum(n),
+         comprehension_score = n / sum_n,
+         freq = n / sum_n * 100) %>% 
+  ungroup()
+```
+
+Descriptive statistics of those participants who scored above 50% on the sentence comprehension task.
+
+```{r}
+sentence_comprehension %>%  
+  filter(freq > 50) %>% 
+  summarise(mean_comprehension_score = mean(comprehension_score),
+            sd_comprehension_score = sd(comprehension_score))
+```
+
+Number of people scoring above chance level.
+
+```{r}
+sentence_comprehension %>%  
+  filter(freq > 50) %>% 
+  distinct(participant_id) %>% 
+  count()
+```
+
+Extracting the participant ids of those participants who have to be excluded because of their performance on the sentence comprehension task.
+
+```{r}
+exclude_comprehension <-
+  sentence_comprehension %>% 
+  filter(correct == 1 & freq < 70) %>% 
+  select(participant_id)
+```
+
+Number of people who we exclude because of comprehension probe.
+
+```{r}
+count(exclude_comprehension)
+```
+
+Excluding the participants and creating a new dataset for this analysis.
+
+```{r}
+main_analysis_data <-
+  main_analysis_data %>% 
+  anti_join(., exclude_comprehension, by = "participant_id")
+```
+
+## Creating data for the reaction time analysis
+
+For the reaction time analysis we only keep correct sentences.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_data %>% 
+  filter(is_correct == 1L)
 ```
 
 ### Replacing outliers with a cutoff value
@@ -500,32 +521,22 @@ Saving the processed reaction time data for the main analysis of the first exper
 write_tsv(main_analysis_rt_data, "Data/Processed/Exp1/Kan_Processed_Exp1_Main_Rt_data.tsv")
 ```
 
-## Creating data for the accuracy analysis
-
-Create a new datatable for the accuracy analysis of Exp1.
-
-We exclude the participant who made so many mistakes that one condition is missing correct responses.
-
-```{r}
-main_analysis_acc_data <-
-  main_analysis_data %>% 
-  anti_join(., missing_condition, by = "participant_id")
-```
-
-### Saving data
+### Saving data for the accuracy analysis
 
 Saving the processed accuracy data for the main analysis of the first experiment.
 
 ```{r}
-write_tsv(main_analysis_acc_data, "Data/Processed/Exp1/Kan_Processed_Exp1_Main_Acc_data.tsv")
+write_tsv(main_analysis_data, "Data/Processed/Exp1/Kan_Processed_Exp1_Main_Acc_data.tsv")
 ```
 
 ## Outcome neutral tests data preprocessing
 ### Sentence task
 
+We exclude the participants from this analysis because of the comprehension probe, but not because of missing condition.
+
 ```{r}
 neutral_analysis_sentence <-
-  test_raw
+  anti_join(test_raw, exclude_comprehension, by = "participant_id")
 ```
 
 #### Read the specifications of the sentence regions
@@ -744,7 +755,7 @@ residual_model <-
 
 This datatable has 1188 values because there are 132 participants and the maximum number of sentence regions is 9 for the longest sentence, therefore 132 * 9 = 1188. 
 
-Now that we have the fitted model in the model variable for each sentence of each sentence region, we calculate the predicted reading times of the model for the congruent sentences.
+Now that we have the fitted model in the model variable for each sentence region, we calculate the predicted reading times of the model for the congruent sentences.
 
 ```{r}
 predicted_reading_time_model_con <-
@@ -878,6 +889,15 @@ Read datafile from the subfolder of the given experiment.
 
 ```{r}
 raw <- vroom::vroom("Data/Raw/Exp2/Kan_Raw_Exp2_data.tsv")
+```
+
+## EDA
+### Number of participants
+
+```{r}
+raw %>%
+  distinct(filename) %>% 
+  count()
 ```
 
 ## Selecting only needed variables
@@ -1057,7 +1077,7 @@ main_analysis_data %>%
   count(conflict_condition)
 ```
 
-The number and proporiton of test trials per conflict condition per set of trials.
+The number and proportion of test trials per conflict condition per set of trials.
 
 ```{r}
 main_analysis_data %>% 
@@ -1120,6 +1140,30 @@ The number of participants who has missing conditions:
 count(missing_condition)
 ```
 
+Excluding those participants have 0% accuracy.
+
+```{r}
+all_incorrect <- 
+  main_analysis_data %>% 
+  filter(is_previous_necker == 1L) %>% 
+  group_by(participant_id) %>% 
+  filter(all(is_correct == 0)) %>% 
+  ungroup() %>% 
+  distinct(participant_id)
+```
+
+Number of participants who have 0% accuracy.
+
+```{r}
+count(all_incorrect)
+```
+
+```{r}
+main_analysis_data <-
+  main_analysis_data %>%
+  anti_join(., all_incorrect, by = "participant_id")
+```
+
 ### Reversal assignment
 
 We assign each participant to a reversal group based on the experienced reversal number in the incongruent necker trials.
@@ -1143,7 +1187,8 @@ Check the average number of experienced reversals across participants:
 reversal_assignment %>% 
   group_by(reversal_group) %>% 
   summarize(group_mean_reversal = mean(mean_reversal, na.rm = T),
-            sd_reversal = sd(mean_reversal, na.rm = T))
+            sd_reversal = sd(mean_reversal, na.rm = T),
+            n = n())
 ```
 
 Join the calculated reversal group assignment with the full dataset.
@@ -1265,6 +1310,15 @@ Read datafile from the subfolder of the given experiment.
 raw <- vroom::vroom("Data/Raw/Exp3/Kan_Raw_Exp3_data.tsv")
 ```
 
+## EDA
+### Number of participants
+
+```{r}
+raw %>%
+  distinct(filename) %>% 
+  count()
+```
+
 ## Selecting only needed variables
 
 Opensesame logs several variables that are not needed for the further analysis. For the sake of simplicity, we only keep the variables that are needed.
@@ -1310,7 +1364,7 @@ raw <-
   rename(trial_id = live_row)
 ```
 
-We create a unique varaible for the identification of the participants [participant_id].
+We create a unique variable for the identification of the participants [participant_id].
 
 ```{r}
 raw <- 
@@ -1429,6 +1483,46 @@ main_analysis_data <-
   rename(is_correct = correct)
 ```
 
+#### Excluding participants who has a condition with no data
+
+The number of conditions per participant. Because we excluded the incorrect trials for the reaction time analysis, it can happen that a participant does no have reaction time responses from all the 4 conditions. We decided that we will exclude these participants from both analyses.
+
+```{r}
+missing_condition <-
+  main_analysis_data %>% 
+  filter(is_previous_necker == 1L,
+         is_correct == 1L) %>%
+  group_by(participant_id, is_congruent, is_previous_congruent) %>% 
+  summarise(n = n()) %>% 
+  group_by(participant_id) %>%
+  summarise(n = n()) %>%
+  filter(n != 4) %>%
+  select(participant_id) %>% 
+  ungroup()
+```
+
+Excluding these participants from further analysis.
+
+```{r}
+main_analysis_data <-
+  main_analysis_data %>%
+  anti_join(., missing_condition, by = "participant_id")
+```
+
+The number of participants left after this exclusion.
+
+```{r}
+main_analysis_data %>% 
+  distinct(participant_id) %>% 
+  count()
+```
+
+The number of participants who has missing conditions.
+
+```{r}
+count(missing_condition)
+```
+
 ## Excluding participants comprehension probe
 
 We excluded the data of participants whose performance was below 70% on accurately identifying whether or not a stimulus change occurred on the current trial.
@@ -1453,6 +1547,13 @@ comprehension_probe_data %>%
             all_sd_acc = sd(mean_acc))
 ```
 
+The number of participants who we excluded because of the comprehension probe.
+
+```{r}
+comprehension_probe_data %>% 
+  count(drop_comprehension)
+```
+
 Excluding participants who has accuracy lower than 70% from the whole dataset.
 
 ```{r}
@@ -1460,38 +1561,6 @@ main_analysis_data <-
   main_analysis_data %>% 
   left_join(., comprehension_probe_data, by = "participant_id") %>% 
   filter(drop_comprehension == 0L)
-```
-
-#### Excluding participants who has a condition with no data
-
-The number of conditions per participant. Because we excluded the incorrect trials for the reaction time analysis, it can happen that a participant does no have reaction time responses from all the 4 conditions. We decided that we will exclude these participants from both analyses.
-
-```{r}
-missing_condition <-
-  main_analysis_data %>% 
-  filter(is_previous_necker == 1L,
-         is_correct == 1L) %>%
-  group_by(participant_id, is_congruent, is_previous_congruent) %>% 
-  summarise(n = n()) %>% 
-  group_by(participant_id) %>%
-  summarise(n = n()) %>% 
-  filter(n != 4) %>%
-  select(participant_id) %>% 
-  ungroup()
-```
-
-Excluding these participants from further analysis.
-
-```{r}
-main_analysis_data <-
-  main_analysis_data %>%
-  anti_join(., missing_condition, by = "participant_id")
-```
-
-The number of participants who has missing conditions.
-
-```{r}
-count(missing_condition)
 ```
 
 ### Creating accuracy analysis data

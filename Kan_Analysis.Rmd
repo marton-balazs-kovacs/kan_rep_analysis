@@ -2,7 +2,9 @@
 title: "Kan_Analysis"
 author: "Marton Kovacs"
 date: '`r format(Sys.time(), "%d %B, %Y")`'
-output: html_document
+output:
+  word_document: default
+  html_document: default
 ---
 
 # Load packages
@@ -19,7 +21,8 @@ library(psych)
 # Load custom functions
 
 ```{r}
-source("utils.R")
+source("R/utils.R")
+source("R/arcsine_transformation.R")
 ```
 
 # Exp1
@@ -100,25 +103,55 @@ sentence_region_plot <- function(df, name) {
   ggplot() +
   aes(x = congruency,
       y = mean) +
-  geom_point(size = 6) +
+  geom_point(size = 2) +
   geom_errorbar(aes(ymin = mean - (se * 1.96),
                     ymax = mean + (se  * 1.96)),
                 width = .1) +
-  labs(title = paste("Sentence region no:", name),
+  labs(title = paste("Sentence region", name),
        x = "Congruency of the sentence region",
        y = "Mean residual reading time") +
   theme_minimal() +
-  theme(axis.title = element_text(size = 25),
-        axis.text = element_text(size = 20),
-        strip.text.x = element_text(size = 20))
+  theme(
+    title = element_text(size = 8),
+    # axis.title = element_text(size = 5),
+    axis.text.y = element_text(size = 5)
+    # strip.text.x = element_text(size = 5)
+    )
 }
 
 outcome_neutral_sentence_data <- 
   outcome_neutral_sentence_data %>% 
   mutate(sentence_plot = map2(data, as.character(sentence_region_no), 
                      ~ sentence_region_plot(.x, .y)))
+```
 
-outcome_neutral_sentence_data$sentence_plot
+Create one plot to show all of the sentence plots together.
+
+```{r}
+plot_1 <- outcome_neutral_sentence_data$sentence_plot[[1]] +
+  theme(axis.title.x = element_blank())
+plot_2 <- outcome_neutral_sentence_data$sentence_plot[[2]] +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank())
+plot_3 <- outcome_neutral_sentence_data$sentence_plot[[3]] +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank())
+plot_4 <- outcome_neutral_sentence_data$sentence_plot[[4]] +
+  theme(axis.title.x = element_blank())
+plot_5 <- outcome_neutral_sentence_data$sentence_plot[[5]] +
+  theme(axis.title.y = element_blank())
+plot_6 <- outcome_neutral_sentence_data$sentence_plot[[6]] +
+  theme(axis.title.y = element_blank())
+plot_7 <- outcome_neutral_sentence_data$sentence_plot[[7]]
+
+reading_time_plot <-
+  cowplot::plot_grid(plot_1, plot_2, plot_3,
+                     plot_4, plot_5, plot_6,
+                     plot_7)
+
+ggsave("Kan_Exp1_ReadingTime_Plot.png", device = "png", plot = reading_time_plot, dpi = 300, width = 208, height = 118, units = "mm")
+
+reading_time_plot
 ```
 
 Assigning SD theory for the Bayes factor analysis.
@@ -144,6 +177,111 @@ outcome_neutral_sentence_data <-
                             sdtheory = ..4,
                             dftheory = 10^10,
                             tail = 1)))
+```
+
+Create table with results.
+
+```{r}
+outcome_neutral_sentence_table <-
+  outcome_neutral_sentence_data %>% 
+  mutate(raw_effect = round(raw_effect, 2),
+         bf = round(bf, 2),
+         t_value = round(t_value, 2),
+         p_value = round(p_value, 2),
+         se = round(se, 2)) %>% 
+  rename(`Sentence region id` = sentence_region_no,
+         `t value` = t_value,
+         DF = df,
+         `p value` = p_value,
+         `Raw effect` = raw_effect,
+         SE = se,
+         B = bf) %>% 
+  select(-sentence_region_type,
+         -data,
+         -sentence_plot,
+         -sd_theory)
+
+papaja::apa_table(
+  outcome_neutral_sentence_table,
+  caption = "Results of the Comparison of the Mean Residual Reading Times in Each Sentence Region",
+  escape = TRUE
+)
+```
+
+Calculating the robustness region for temporarily ambiguous region.
+
+```{r}
+temporarily_data <- 
+  outcome_neutral_sentence_data %>% 
+  filter(sentence_region_type == "temporarly ambiguous")
+
+sd <- 
+  temporarily_data %>% 
+  pull(se)
+
+obtained <- 
+  temporarily_data %>% 
+  pull(raw_effect)
+
+df <- 
+  temporarily_data %>% 
+  pull(df)
+
+# lower
+Bf(sd = sd,
+   obtained = obtained,
+   dfdata = df,
+   meanoftheory = 0,
+   sdtheory = 0.6,
+   dftheory = 10^10,
+   tail = 1)
+
+# upper
+Bf(sd = sd,
+   obtained = obtained,
+   dfdata = df,
+   meanoftheory = 0,
+   sdtheory = 6325,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+Calculating the robustness region for disambuguating region.
+
+```{r}
+disambiguating_data <- 
+  outcome_neutral_sentence_data %>% 
+  filter(sentence_region_type == "disambiguating ambiguous")
+
+sd <- 
+  disambiguating_data %>% 
+  pull(se)
+
+obtained <- 
+  disambiguating_data %>% 
+  pull(raw_effect)
+
+df <- 
+  disambiguating_data %>% 
+  pull(df)
+
+# lower
+Bf(sd = sd,
+   obtained = obtained,
+   dfdata = df,
+   meanoftheory = 0,
+   sdtheory = 2.6,
+   dftheory = 10^10,
+   tail = 1)
+
+# upper
+Bf(sd = sd,
+   obtained = obtained,
+   dfdata = df,
+   meanoftheory = 0,
+   sdtheory = 21,
+   dftheory = 10^10,
+   tail = 1)
 ```
 
 ## Crucial tests
@@ -176,7 +314,8 @@ main_analysis_rt_data %>%
 The congruency sequence effect for the reaction time responses.
 
 ```{r}
-main_analysis_rt_data %>% 
+kan_exp1_rt_cse_plot <-
+  main_analysis_rt_data %>% 
   mutate(is_previous_congruent = case_when(is_previous_congruent ==  0L ~ "Incongruent",
                                            is_previous_congruent ==  1L ~ "Congruent"),
          is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
@@ -208,12 +347,14 @@ main_analysis_rt_data %>%
         legend.text = element_text(size = 20),
         legend.title = element_text(size = 20),
         legend.position = c(.85, .4))
+
+kan_exp1_rt_cse_plot
 ```
 
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp1_Rt_Congruency_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp1_Rt_Cse_Plot.png", width = 14.4, height = 8, plot = kan_exp1_rt_cse_plot)
 ```
 
 #### Data preprocessing
@@ -255,14 +396,6 @@ The number of participants who has missing conditions.
 nrow(missing_condition)
 ```
 
-Excluding these participants from further analysis.
-
-```{r}
-main_analysis_rt_aggregate <-
-  main_analysis_rt_aggregate %>%
-  anti_join(., missing_condition, by = "participant_id")
-```
-
 Calculating the raw congruency, previous congruency and interaction effect for each participant.
 
 ```{r}
@@ -300,6 +433,18 @@ anova_rt_f_value <-
                              term == "is_congruent:is_previous_congruent" ~ "interaction_effect",
                              term == "Residuals" ~ term),
             f_value = statistic) %>% 
+  filter(!is.na(f_value))
+```
+
+Show the results of the ANOVA.
+
+```{r}
+anova_rt %>% 
+  broom::tidy() %>% 
+  rename(f_value = statistic,
+         p_value = p.value) %>% 
+  mutate(f_value = round(f_value, 2),
+         p_value = round(p_value, 2)) %>% 
   filter(!is.na(f_value))
 ```
 
@@ -367,6 +512,23 @@ Bf(sd = interaction_se,
    tail = 1)
 ```
 
+Robustness region.
+
+```{r}
+# Lower
+## The lower boundary is 0
+
+# Upper
+Bf(sd = interaction_se,
+   obtained = interaction_effect,
+   dfdata = interaction_df - 1,
+   meanoftheory = 0,
+   sdtheory = 33,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+### Outcome neutral test
 #### Test Stroop effect
 
 This is an outcome neutral test, therefore, the results of this test do not effect our main conclusions.
@@ -401,6 +563,83 @@ Bf(sd = main_se,
    dfdata = main_df - 1,
    meanoftheory = 0,
    sdtheory = 28,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+Robustness region.
+
+```{r}
+# Lower
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df - 1,
+   meanoftheory = 0,
+   sdtheory = 0.8,
+   dftheory = 10^10,
+   tail = 1)
+
+# Upper
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df - 1,
+   meanoftheory = 0,
+   sdtheory = 14510,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+### Supporting test of interest
+#### Test previous congruency effect
+
+This is a supporting test of interest. We use the same prior as for the main Stroop effect test.
+
+Saving the values needed for the analysis.
+
+```{r}
+# Obtained sd
+main_se <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_previous_congruent") %>% 
+  pull(se)
+
+# Obtained effect
+main_effect <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_previous_congruent") %>% 
+  pull(raw_effect)
+
+# Df
+main_df <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_previous_congruent") %>% 
+  pull(n_participant)
+```
+
+Running the Bf analysis with the model described in the paper.
+
+```{r}
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df - 1,
+   meanoftheory = 0,
+   sdtheory = 28,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+Robustness region.
+
+```{r}
+# Lower
+## 0 as the Bf is inconclusive
+
+# Upper
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df - 1,
+   meanoftheory = 0,
+   sdtheory = 44,
    dftheory = 10^10,
    tail = 1)
 ```
@@ -448,10 +687,11 @@ main_analysis_acc_data %>%
 
 #### Figures
 
-The congruency sequency effect for the accuracy responses.
+The congruency sequence effect for the accuracy responses.
 
 ```{r}
-main_analysis_acc_data %>% 
+kan_exp1_acc_cse_plot <-
+  main_analysis_acc_data %>% 
   mutate(is_previous_congruent = case_when(is_previous_congruent ==  0L ~ "Incongruent",
                                            is_previous_congruent ==  1L ~ "Congruent"),
          is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
@@ -483,12 +723,14 @@ main_analysis_acc_data %>%
         legend.text = element_text(size = 20),
         legend.title = element_text(size = 20),
         legend.position = c(.85, .4))
+
+kan_exp1_acc_cse_plot
 ```
 
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp1_Acc_Congruency_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp1_Acc_Cse_Plot.png", width = 14.4, height = 8, plot = kan_exp1_acc_cse_plot)
 ```
 
 #### Data preprocessing
@@ -527,6 +769,12 @@ anova_acc <-
   as_tibble(anova_acc$ANOVA)
 ```
 
+Show the results of the ANOVA.
+
+```{r}
+anova_acc
+```
+
 We are extracting the F value and the df for each term in the ANOVA.
 
 ```{r}
@@ -542,7 +790,7 @@ anova_acc_f_value <-
             df = DFd)
 ```
 
-We caluclate the raw effects for each term for each participant.
+We calculate the raw effects for each term for each participant.
 
 ```{r}
 main_analysis_acc_participant_level_raw_effect <-
@@ -623,7 +871,155 @@ Bf(sd = interaction_se,
    tail = 1)
 ```
 
+Robustness region.
+
+```{r}
+# Lower
+Bf(sd = interaction_se,
+   obtained = interaction_effect,
+   dfdata = interaction_df,
+   meanoftheory = 0,
+   sdtheory = .0095,
+   dftheory = 10^10,
+   tail = 1)
+
+# Upper
+Bf(sd = interaction_se,
+   obtained = interaction_effect,
+   dfdata = interaction_df,
+   meanoftheory = 0,
+   sdtheory = .28,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+#### Arcsine transformed accuracy
+
+We run the calculations with arcsine transformed proportions. We will include these findings in the supplementary materials.
+
+The calculation is the same as before expect that we use arcsine transformation on the conditional means. We are going to use a formula describe in the original paper to calculate the arcsine transformed values, but we will also use a more common way to calculate the transformed values. Copying the whole accuracy analysis part would take up a lot of space in the code and would be error prone therefore, we created simple functions to calculate the Bf with the arcsine transformed data.
+
+The method the original paper used to transform the raw proportions.
+
+```{r}
+arcsine_original_method <- quo(asin(( 2 * acc_conditional_mean) - 1))
+```
+
+A more common way to calculate.
+
+```{r}
+arcsine_common_method <- quo(asin(sqrt(acc_conditional_mean)))
+```
+
+Calculating the Bf with the two methods.
+
+```{r}
+arcsine_two_way(
+  df = main_analysis_acc_data,
+  expression = arcsine_original_method
+  )
+
+arcsine_two_way(
+  df = main_analysis_acc_data,
+  expression = arcsine_common_method
+  )
+```
+
 __Note: The accuracy main effect of the current trial was not significant in the original study so we do not attempt to replicate it.__
+
+### Supporting tests of interest
+
+As the presence of the interaction effect in the accuracy analysis was supported by the Bayes factor we run further tests to investigate the CSE.
+
+We run further comparisons to test whether congruency sequence effect modulated the performance on congruent, on incongruent trials or on both. To this aim, we test whether the type of the preceding trial modulates the accuracy rates of congruent and incongruent trials. To model the H1s, we utilize the parameters of the test of the interaction.
+
+Comparing cC and iC trials.
+
+```{r}
+cong_prev <- 
+  main_analysis_acc_participant_level_raw_effect %>% 
+  t.test(.$cc, .$ic, paired = TRUE, alternative = "greater", data = .) %>% 
+  broom::tidy()
+
+cong_prev$estimate <- unname(cong_prev$estimate)
+cong_prev$statistic <- unname(cong_prev$statistic)
+cong_prev$parameter <- unname(cong_prev$parameter)
+```
+
+Running the Bf analysis with the model described in the paper.
+
+```{r}
+Bf(sd = abs(cong_prev$estimate / cong_prev$statistic),
+   obtained = cong_prev$estimate,
+   dfdata = cong_prev$parameter,
+   meanoftheory = 0,
+   sdtheory = .03,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+Robustness region.
+
+```{r}
+# Lower
+Bf(sd = abs(cong_prev$estimate / cong_prev$statistic),
+   obtained = cong_prev$estimate,
+   dfdata = cong_prev$parameter,
+   meanoftheory = 0,
+   sdtheory = .027,
+   dftheory = 10^10,
+   tail = 1)
+
+# Upper
+## Inf
+```
+
+Comparing iI and Ci trials.
+
+```{r}
+incong_prev <- 
+  main_analysis_acc_participant_level_raw_effect %>% 
+  t.test(.$ii, .$ci, paired = TRUE, alternative = "greater", data = .) %>% 
+  broom::tidy()
+
+incong_prev$estimate <- unname(incong_prev$estimate)
+incong_prev$statistic <- unname(incong_prev$statistic)
+incong_prev$parameter <- unname(incong_prev$parameter)
+```
+
+Running the Bf analysis with the model described in the paper.
+
+```{r}
+Bf(sd = abs(incong_prev$estimate / incong_prev$statistic),
+   obtained = incong_prev$estimate,
+   dfdata = incong_prev$parameter,
+   meanoftheory = 0,
+   sdtheory = .03,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+Robustness region.
+
+```{r}
+# Lower
+Bf(sd = abs(incong_prev$estimate / incong_prev$statistic),
+   obtained = incong_prev$estimate,
+   dfdata = incong_prev$parameter,
+   meanoftheory = 0,
+   sdtheory = .0036,
+   dftheory = 10^10,
+   tail = 1)
+
+# Upper
+Bf(sd = abs(incong_prev$estimate / incong_prev$statistic),
+   obtained = incong_prev$estimate,
+   dfdata = incong_prev$parameter,
+   meanoftheory = 0,
+   sdtheory = 14.3,
+   dftheory = 10^10,
+   tail = 1)
+```
 
 ***
 
@@ -668,7 +1064,8 @@ main_analysis_rt_data %>%
 The congruency sequence effect for the reaction time responses with reversal groups.
 
 ```{r}
-main_analysis_rt_data %>% 
+kan_exp2_rt_cse_rev_plot <-
+  main_analysis_rt_data %>% 
   mutate(is_previous_congruent = case_when(is_previous_congruent ==  0L ~ "Incongruent",
                                            is_previous_congruent ==  1L ~ "Congruent"),
          is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
@@ -704,18 +1101,21 @@ main_analysis_rt_data %>%
         legend.title = element_text(size = 20),
         strip.text.x = element_text(size = 20),
         legend.position = c(.9, .3))
+
+kan_exp2_rt_cse_rev_plot
 ```
 
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp2_Rt_Cse_Rev_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp2_Rt_Cse_Rev_Plot.png", width = 14.4, height = 8, plot = kan_exp2_rt_cse_rev_plot)
 ```
 
 The congruency sequence effect for the reaction time responses without reversal groups.
 
 ```{r}
-main_analysis_rt_data %>% 
+kan_exp2_rt_cse_plot <-
+  main_analysis_rt_data %>% 
   mutate(is_previous_congruent = case_when(is_previous_congruent ==  0L ~ "Incongruent",
                                            is_previous_congruent ==  1L ~ "Congruent"),
          is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
@@ -747,12 +1147,14 @@ main_analysis_rt_data %>%
         legend.text = element_text(size = 20),
         legend.title = element_text(size = 20),
         strip.text.x = element_text(size = 20))
+
+kan_exp2_rt_cse_plot
 ```
 
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp2_Rt_Cse_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp2_Rt_Cse_Plot.png", width = 14.4, height = 8, plot = kan_exp2_rt_cse_plot)
 ```
 
 ### Crucial tests
@@ -799,6 +1201,12 @@ Transforming the results of the ANOVA to a datatable.
 ```{r}
 anova_rt <-
   as_tibble(anova_rt$ANOVA)
+```
+
+Show the results of the ANOVA.
+
+```{r}
+anova_rt
 ```
 
 Extracting the F value and df from the ANOVA.
@@ -900,6 +1308,144 @@ Bf(sd = rt_sd,
    tail = 1)
 ```
 
+Robustness region.
+
+```{r}
+# Lower
+## 0 because it is inconclusive
+
+# Upper
+Bf(sd = rt_sd,
+   obtained = rt_obtained,
+   dfdata = rt_df,
+   meanoftheory = 0,
+   sdtheory = 180,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+### Outcome neutral test
+#### Test Stroop effect
+
+This is an outcome neutral test, therefore, the results of this test do not effect our main conclusions.
+
+Saving the values needed for the analysis.
+
+```{r}
+# Obtained sd
+main_se <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_congruent") %>% 
+  pull(se)
+
+# Obtained effect
+main_effect <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_congruent") %>% 
+  pull(raw_effect)
+
+# Df
+main_df <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_congruent") %>% 
+  pull(df)
+```
+
+Running the Bf analysis with the model described in the paper.
+
+```{r}
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df,
+   meanoftheory = 0,
+   sdtheory = 28,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+Robustness region.
+
+```{r}
+# Lower
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df,
+   meanoftheory = 0,
+   sdtheory = 0.69,
+   dftheory = 10^10,
+   tail = 1)
+
+# Upper
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df,
+   meanoftheory = 0,
+   sdtheory = 16991,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+### Supporting test of interest
+#### Test previous congruency effect
+
+This is a supporting test of interest. We use the same prior as for the main Stroop effect test.
+
+Saving the values needed for the analysis.
+
+```{r}
+# Obtained sd
+main_se <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_previous_congruent") %>% 
+  pull(se)
+
+# Obtained effect
+main_effect <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_previous_congruent") %>% 
+  pull(raw_effect)
+
+# Df
+main_df <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_previous_congruent") %>% 
+  pull(df)
+```
+
+Running the Bf analysis with the model described in the paper.
+
+```{r}
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df,
+   meanoftheory = 0,
+   sdtheory = 28,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+Robustness region.
+
+```{r}
+# Lower
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df,
+   meanoftheory = 0,
+   sdtheory = 1.08,
+   dftheory = 10^10,
+   tail = 1)
+
+# Upper
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df,
+   meanoftheory = 0,
+   sdtheory = 17280,
+   dftheory = 10^10,
+   tail = 1)
+```
+
 ### Three way interaction
 #### Data preprocessing
 
@@ -952,6 +1498,12 @@ Transforming the results of the ANOVA to a datatable.
 ```{r}
 anova_rt <-
   as_tibble(anova_rt$ANOVA)
+```
+
+Show the results of the ANOVA.
+
+```{r}
+anova_rt
 ```
 
 Extracting the F value and df from the ANOVA.
@@ -1032,7 +1584,7 @@ main_analysis_rt_raw_effect <-
   mutate(se = abs(raw_effect / sqrt(f_value)))
 ```
 
-Assignig variables to calculate bayes factor.
+Assigning variables to calculate bayes factor.
 
 ```{r}
 # sd
@@ -1066,6 +1618,22 @@ Bf(sd = rt_sd,
    tail = 1)
 ```
 
+Robustness region.
+
+```{r}
+# Lower
+Bf(sd = rt_sd,
+   obtained = rt_obtained,
+   dfdata = rt_df,
+   meanoftheory = 0,
+   sdtheory = 24.3,
+   dftheory = 10^10,
+   tail = 1)
+
+# Upper
+## Inf
+```
+
 ### Correlation
 
 We are calculating the correlation between the mean number of reversals per participant and the size of the conflict adaptation operationalized by the current incongruent difference.
@@ -1095,7 +1663,8 @@ main_analysis_rt_cor_data <-
 We are visualizing the comparison on a figure.
 
 ```{r}
-main_analysis_rt_cor_data %>%  
+kan_exp2_correlation_rt_plot <-
+  main_analysis_rt_cor_data %>%  
   mutate(reversal_group = case_when(reversal_group == "low" ~ "Low reversal group",
                                     reversal_group == "high" ~ "High reversal group")) %>% 
   ggplot() +
@@ -1105,22 +1674,24 @@ main_analysis_rt_cor_data %>%
   geom_jitter(colour = "black", pch = 21, size = 3) +
   guides(shape = guide_legend(title = "Reversal group")) +
   labs(x = "The mean number of reversals",
-       y = "The conflict adaptation effect (II - CI) in milliseconds",
+       y = "The conflict adaptation effect (cI - iI) in milliseconds",
        fill = "Reversel group") +
+  viridis::scale_fill_viridis(discrete = TRUE) +
   theme_minimal() +
-  theme(axis.title = element_text(size = 20),
-        axis.text = element_text(size = 15),
-        legend.text = element_text(size = 15),
-        legend.title = element_text(size = 15),
+  theme(axis.title = element_text(size = 10),
+        axis.text = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.title = element_text(size = 10),
         legend.position = c(.9, .3))
+
+kan_exp2_correlation_rt_plot
 ```
 
 Save the plot.
 
 ```{r}
-ggsave("Figures/Kan_Exp2_Correlation_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp2_Correlation_Rt_Plot.png", width = 14.4, height = 8, plot = kan_exp2_correlation_rt_plot)
 ```
-
 
 Running the correlation.
 
@@ -1172,7 +1743,8 @@ main_analysis_acc %>%
 Figure with reversal groups.
 
 ```{r}
-main_analysis_acc %>% 
+kan_exp2_acc_cse_rev_plot <-
+  main_analysis_acc %>% 
   mutate(is_previous_congruent = case_when(is_previous_congruent ==  0L ~ "Incongruent",
                                            is_previous_congruent ==  1L ~ "Congruent"),
          is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
@@ -1208,18 +1780,21 @@ main_analysis_acc %>%
         legend.title = element_text(size = 15),
         strip.text.x = element_text(size = 15),
         legend.position = c(.9, .8))
+
+kan_exp2_acc_cse_rev_plot
 ```
 
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp2_Acc_Cse_Rev_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp2_Acc_Cse_Rev_Plot.png", width = 14.4, height = 8, plot = kan_exp2_acc_cse_rev_plot)
 ```
 
 Figure without reversal groups.
 
 ```{r}
-main_analysis_acc %>% 
+kan_exp2_acc_cse_plot <-
+  main_analysis_acc %>% 
   mutate(is_previous_congruent = case_when(is_previous_congruent ==  0L ~ "Incongruent",
                                            is_previous_congruent ==  1L ~ "Congruent"),
          is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
@@ -1252,19 +1827,21 @@ main_analysis_acc %>%
         legend.title = element_text(size = 15),
         strip.text.x = element_text(size = 15),
         legend.position = c(.9, .8))
+
+kan_exp2_acc_cse_plot
 ```
 
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp2_Acc_Cse_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp2_Acc_Cse_Plot.png", width = 14.4, height = 8, plot = kan_exp2_acc_cse_plot)
 ```
 
 ### Crucial tests
 ### Two way interaction
 #### Data preprocessing
 
-we are calculating the conditional mean of the correct trials per particpant and per condition (CC, II, CI, IC).
+we are calculating the conditional mean of the correct trials per participant and per condition (CC, II, CI, IC).
 
 ```{r}
 main_analysis_acc_aggregate <-
@@ -1296,6 +1873,12 @@ Transforming the output of the ANOVA to a tibble.
 ```{r}
 anova_acc <-
   as_tibble(anova_acc$ANOVA)
+```
+
+Show the results of the ANOVA.
+
+```{r}
+anova_acc
 ```
 
 Extract the F value and df2 from the ANOVA.
@@ -1393,10 +1976,42 @@ Bf(sd = acc_sd,
    tail = 1)
 ```
 
+Robustness region.
+
+```{r}
+# Lower
+## 0 because it is inconclusive
+
+# Upper
+Bf(sd = acc_sd,
+   obtained = acc_obtained,
+   dfdata = acc_df,
+   meanoftheory = 0,
+   sdtheory = .049,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+#### Arcsine transformed accuracy
+
+Calculating the Bf with the two methods.
+
+```{r}
+arcsine_two_way(
+  df = main_analysis_acc,
+  expression = arcsine_original_method
+  )
+
+arcsine_two_way(
+  df = main_analysis_acc,
+  expression = arcsine_common_method
+  )
+```
+
 ### Three way interaction
 #### Data preprocessing
 
-we are calculating the conditional mean of the correct trials per particpant and per condition (CC, II, CI, IC).
+We are calculating the conditional mean of the correct trials per participant and per condition (CC, II, CI, IC).
 
 ```{r}
 main_analysis_acc_aggregate <-
@@ -1433,14 +2048,20 @@ anova_acc <-
   ezANOVA(data = main_analysis_acc_aggregate, dv = acc_conditional_mean, wid = participant_id, within = .(is_congruent, is_previous_congruent), between = reversal_group, type = 3)
 ```
 
-Transfroming the output of the ANOVA to a tibble.
+Transforming the output of the ANOVA to a tibble.
 
 ```{r}
 anova_acc <-
   as_tibble(anova_acc$ANOVA)
 ```
 
-Extract the F valu and df2 from the ANOVA.
+Show the results of the ANOVA.
+
+```{r}
+anova_acc
+```
+
+Extract the F value and df2 from the ANOVA.
 
 ```{r}
 anova_acc_f_value <-
@@ -1548,6 +2169,40 @@ Bf(sd = acc_sd,
    tail = 1)
 ```
 
+Robustness region.
+
+```{r}
+# Lower
+## 0 because inconclusive
+
+# Upper
+Bf(sd = acc_sd,
+   obtained = acc_obtained,
+   dfdata = acc_df,
+   meanoftheory = 0,
+   sdtheory = .045,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+#### Arcsine transformed accuracy
+
+We run the calculations with arcsine transformed proportions. We will include these findings in the supplementary materials.
+
+The calculation is the same as before expect that we use arcsine transformation on the conditional means.
+
+```{r}
+arcsine_three_way(
+  df = main_analysis_acc,
+  expression = arcsine_original_method
+  )
+
+arcsine_three_way(
+  df = main_analysis_acc,
+  expression = arcsine_common_method
+  )
+```
+
 ### Correlation
 
 Creating dataset for the comparison between the mean number of experienced reversals and the raw interaction effect per participant.
@@ -1565,17 +2220,18 @@ main_analysis_acc_cor <-
                                TRUE ~ NA_character_)) %>% 
   select(-is_previous_congruent, -is_congruent) %>% 
   spread(key = condition, value = acc_conditional_mean) %>% 
-  mutate(current_incongruent = ci - ii) %>% 
+  mutate(current_incongruent = ii - ci) %>% 
   select(participant_id,
          current_incongruent,
          mean_reversal,
          reversal_group)
 ```
 
-Cisualizing the correlation on a figure.
+Visualizing the correlation on a figure.
 
 ```{r}
-main_analysis_acc_cor %>%  
+kan_exp2_correlation_acc_plot <-
+  main_analysis_acc_cor %>%  
   mutate(reversal_group = case_when(reversal_group == "low" ~ "Low reversal group",
                                     reversal_group == "high" ~ "High reversal group")) %>% 
   ggplot() +
@@ -1587,15 +2243,24 @@ main_analysis_acc_cor %>%
   labs(x = "The mean number of reversals",
        y = "The conflict adaptation effect (II - CI) frequency of correct trials",
        fill = "Reversel group") +
+  viridis::scale_fill_viridis(discrete = TRUE) +
   theme_minimal() +
   theme(axis.title = element_text(size = 20),
         axis.text = element_text(size = 15),
         legend.text = element_text(size = 15),
         legend.title = element_text(size = 15),
         legend.position = c(.9, .4))
+
+kan_exp2_correlation_acc_plot
 ```
 
-Running the correlction test.
+Save the plot.
+
+```{r}
+ggsave("Figures/Kan_Exp2_Correlation_Acc_Plot.png", width = 14.4, height = 8, plot = kan_exp2_correlation_acc_plot)
+```
+
+Running the correlation test.
 
 ```{r}
 cor.test(main_analysis_acc_cor$current_incongruent,
@@ -1605,7 +2270,7 @@ cor.test(main_analysis_acc_cor$current_incongruent,
 
 ***
 
-# Exp3
+# Exp 3
 ## Reaction time analysis
 ### Import data
 
@@ -1637,7 +2302,8 @@ main_analysis_rt_data %>%
 The congruency sequence effect for the reaction time responses.
 
 ```{r}
-main_analysis_rt_data %>% 
+kan_exp3_rt_cse_plot <-
+  main_analysis_rt_data %>% 
   mutate(is_previous_congruent = case_when(is_previous_congruent ==  0L ~ "Incongruent",
                                            is_previous_congruent ==  1L ~ "Congruent"),
          is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
@@ -1668,13 +2334,16 @@ main_analysis_rt_data %>%
         axis.text = element_text(size = 20),
         legend.text = element_text(size = 20),
         legend.title = element_text(size = 20),
-        strip.text.x = element_text(size = 20))
+        strip.text.x = element_text(size = 20),
+        legend.position = c(.9, .8))
+
+kan_exp3_rt_cse_plot
 ```
 
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp3_Rt_Cse_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp3_Rt_Cse_Plot.png", width = 14.4, height = 8, plot = kan_exp3_rt_cse_plot)
 ```
 
 ### Crucial tests
@@ -1707,11 +2376,17 @@ anova_rt <-
   ezANOVA(data = main_analysis_rt_aggregate, dv = rt_conditional_mean, wid = participant_id, within = .(is_congruent, is_previous_congruent), type = 3)
 ```
 
-Transforming the results of the ANOVa to a datatable.
+Transforming the results of the ANOVA to a datatable.
 
 ```{r}
 anova_rt <-
   as_tibble(anova_rt$ANOVA)
+```
+
+Show the results of the ANOVA.
+
+```{r}
+anova_rt
 ```
 
 Extracting F value and df from the ANOVA.
@@ -1769,7 +2444,7 @@ main_analysis_rt_raw_effect <-
   inner_join(., anova_rt_f_value, by = "term")
 ```
 
-Calculating se.
+Calculating SE.
 
 ```{r}
 main_analysis_rt_raw_effect <-
@@ -1813,6 +2488,144 @@ Bf(sd = rt_se,
    tail = 1)
 ```
 
+Robustness region.
+
+```{r}
+# Lower
+## 0 because it was inconclusive
+
+# Upper
+Bf(sd = rt_se,
+   obtained = rt_effect,
+   dfdata = rt_df,
+   meanoftheory = 0,
+   sdtheory = 32,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+### Outcome neutral test
+#### Test Stroop effect
+
+This is an outcome neutral test, therefore, the results of this test do not effect our main conclusions.
+
+Saving the values needed for the analysis.
+
+```{r}
+# Obtained sd
+main_se <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_congruent") %>% 
+  pull(se)
+
+# Obtained effect
+main_effect <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_congruent") %>% 
+  pull(raw_effect)
+
+# Df
+main_df <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_congruent") %>% 
+  pull(df)
+```
+
+Running the Bf analysis with the model described in the paper.
+
+```{r}
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df,
+   meanoftheory = 0,
+   sdtheory = 28,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+Robustness region.
+
+```{r}
+# Lower
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df,
+   meanoftheory = 0,
+   sdtheory = 1.5,
+   dftheory = 10^10,
+   tail = 1)
+
+# Upper
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df,
+   meanoftheory = 0,
+   sdtheory = 15800,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+### Supporting test of interest
+#### Test previous congruency effect
+
+This is a supporting test of interest. We use the same prior as for the main Stroop effect test.
+
+Saving the values needed for the analysis.
+
+```{r}
+# Obtained sd
+main_se <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_previous_congruent") %>% 
+  pull(se)
+
+# Obtained effect
+main_effect <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_previous_congruent") %>% 
+  pull(raw_effect)
+
+# Df
+main_df <- 
+  main_analysis_rt_raw_effect %>% 
+  filter(term == "main_effect_previous_congruent") %>% 
+  pull(df)
+```
+
+Running the Bf analysis with the model described in the paper.
+
+```{r}
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df,
+   meanoftheory = 0,
+   sdtheory = 28,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+Robustness region.
+
+```{r}
+# Lower
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df,
+   meanoftheory = 0,
+   sdtheory = 1.8,
+   dftheory = 10^10,
+   tail = 1)
+
+# Upper
+Bf(sd = main_se,
+   obtained = main_effect,
+   dfdata = main_df,
+   meanoftheory = 0,
+   sdtheory = 27740,
+   dftheory = 10^10,
+   tail = 1)
+```
+
 ## Accuracy analysis
 ### Importing data
 
@@ -1847,7 +2660,8 @@ main_analysis_acc %>%
 Congruency sequence effect of accuracy.
 
 ```{r}
-main_analysis_acc %>% 
+kan_exp3_acc_congruency_plot <-
+  main_analysis_acc %>% 
   mutate(is_previous_congruent = case_when(is_previous_congruent ==  0L ~ "Incongruent",
                                            is_previous_congruent ==  1L ~ "Congruent"),
          is_congruent = case_when(is_congruent ==  0L ~ "Incongruent",
@@ -1880,12 +2694,14 @@ main_analysis_acc %>%
         legend.title = element_text(size = 15),
         strip.text.x = element_text(size = 15),
         legend.position = c(.9, .8))
+
+kan_exp3_acc_congruency_plot
 ```
 
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp3_Acc_Congruency_Plot.png", width = 14.4, height = 8, plot = last_plot())
+ggsave("Figures/Kan_Exp3_Acc_Cse_Plot.png", width = 14.4, height = 8, plot = kan_exp3_acc_congruency_plot)
 ```
 
 ### Data preprocessing
@@ -1915,6 +2731,12 @@ Running the ANOVA.
 ```{r}
 anova_acc <-
   ezANOVA(data = main_analysis_acc_aggregate, dv = acc_conditional_mean, wid = participant_id, within = .(is_congruent, is_previous_congruent), type = 3)
+```
+
+Show the results of the ANOVA.
+
+```{r}
+anova_acc
 ```
 
 Transforming the results of the ANOVA to a datatable.
@@ -2020,3 +2842,38 @@ Bf(sd = acc_se,
    dftheory = 10^10,
    tail = 1)
 ```
+
+Robustness region.
+
+```{r}
+# Lower
+## 0 because it is inconclusive
+
+# Upper
+Bf(sd = acc_se,
+   obtained = acc_effect,
+   dfdata = acc_df,
+   meanoftheory = 0,
+   sdtheory = .28,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+#### Arcsine transformed accuracy
+
+We run the calculations with arcsine transformed proportions. We will include these findings in the supplementary materials.
+
+The calculation is the same as before expect that we use arcsine transformation on the conditional means.
+
+```{r}
+arcsine_two_way(
+  df = main_analysis_acc,
+  expression = arcsine_original_method
+  )
+
+arcsine_two_way(
+  df = main_analysis_acc,
+  expression = arcsine_common_method
+  )
+```
+

@@ -32,6 +32,11 @@ download_files <- function(df, local_data_pth) {
          osf_download(path = file.path(local_data_pth, df$name, .$name)))
 }
 
+#' source: https://stackoverflow.com/questions/48199137/set-number-of-decimal-places-to-show-in-output 
+op <- function(x, d = 2) {
+  sprintf(paste0("%1.",d,"f"), x)
+}
+
 #' Create local file structure
 #' As we have four experiments, we create individual directory for each of them
 #' @param pth path, in which the file structure will be created
