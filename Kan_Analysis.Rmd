@@ -241,7 +241,7 @@ Bf(sd = sd,
    obtained = obtained,
    dfdata = df,
    meanoftheory = 0,
-   sdtheory = 6325,
+   sdtheory = 6125,
    dftheory = 10^10,
    tail = 1)
 ```
@@ -270,7 +270,7 @@ Bf(sd = sd,
    obtained = obtained,
    dfdata = df,
    meanoftheory = 0,
-   sdtheory = 2.6,
+   sdtheory = 17.2,
    dftheory = 10^10,
    tail = 1)
 
@@ -279,7 +279,7 @@ Bf(sd = sd,
    obtained = obtained,
    dfdata = df,
    meanoftheory = 0,
-   sdtheory = 21,
+   sdtheory = 173,
    dftheory = 10^10,
    tail = 1)
 ```
@@ -339,7 +339,7 @@ kan_exp1_rt_cse_plot <-
                 width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
-  ylab("Reaction time") +
+  ylab("Reaction time (ms)") +
   guides(shape = guide_legend(title = "Congruency of \n the current trial")) +
   theme_minimal() +
   theme(axis.title = element_text(size = 25),
@@ -1091,7 +1091,7 @@ kan_exp2_rt_cse_rev_plot <-
                 width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
-  ylab("Reaction time") +
+  ylab("Reaction time (ms)") +
   guides(shape = guide_legend(title = "Congruency of \n the current trial")) +
   facet_wrap( ~ reversal_group) +
   theme_minimal() +
@@ -1139,7 +1139,7 @@ kan_exp2_rt_cse_plot <-
                 width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
-  ylab("Reaction time") +
+  ylab("Reaction time (ms)") +
   guides(shape = guide_legend(title = "Congruency of \n the current trial")) +
   theme_minimal() +
   theme(axis.title = element_text(size = 25),
@@ -1678,10 +1678,10 @@ kan_exp2_correlation_rt_plot <-
        fill = "Reversel group") +
   viridis::scale_fill_viridis(discrete = TRUE) +
   theme_minimal() +
-  theme(axis.title = element_text(size = 10),
-        axis.text = element_text(size = 10),
-        legend.text = element_text(size = 10),
-        legend.title = element_text(size = 10),
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 15),
+        legend.text = element_text(size = 15),
+        legend.title = element_text(size = 15),
         legend.position = c(.9, .3))
 
 kan_exp2_correlation_rt_plot
@@ -2245,7 +2245,7 @@ kan_exp2_correlation_acc_plot <-
        fill = "Reversel group") +
   viridis::scale_fill_viridis(discrete = TRUE) +
   theme_minimal() +
-  theme(axis.title = element_text(size = 20),
+  theme(axis.title = element_text(size = 15),
         axis.text = element_text(size = 15),
         legend.text = element_text(size = 15),
         legend.title = element_text(size = 15),
@@ -2327,7 +2327,7 @@ kan_exp3_rt_cse_plot <-
                 width = .1) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
-  ylab("Reaction time") +
+  ylab("Reaction time (ms)") +
   guides(shape = guide_legend(title = "Congruency of \n the current trial")) +
   theme_minimal() +
   theme(axis.title = element_text(size = 25),

@@ -434,20 +434,38 @@ sentence_comprehension <-
   ungroup()
 ```
 
-Descriptive statistics of those participants who scored above 50% on the sentence comprehension task.
+Descriptive statistics of those participants who scored above 70% on the sentence comprehension task.
 
 ```{r}
 sentence_comprehension %>%  
-  filter(freq > 50) %>% 
+  filter(correct == 1 & freq >= 70) %>% 
   summarise(mean_comprehension_score = mean(comprehension_score),
             sd_comprehension_score = sd(comprehension_score))
 ```
 
-Number of people scoring above chance level.
+Number of people scoring above 70% level.
 
 ```{r}
 sentence_comprehension %>%  
-  filter(freq > 50) %>% 
+  filter(correct == 1 & freq >= 70) %>% 
+  distinct(participant_id) %>% 
+  count()
+```
+
+Descriptive statistics of those participants who scored above 50% on the sentence comprehension task.
+
+```{r}
+sentence_comprehension %>%  
+  filter(correct == 1 & freq > 50) %>% 
+  summarise(mean_comprehension_score = mean(comprehension_score),
+            sd_comprehension_score = sd(comprehension_score))
+```
+
+Number of people scoring above 50% level.
+
+```{r}
+sentence_comprehension %>%  
+  filter(correct == 1 & freq > 50) %>% 
   distinct(participant_id) %>% 
   count()
 ```
@@ -532,11 +550,12 @@ write_tsv(main_analysis_data, "Data/Processed/Exp1/Kan_Processed_Exp1_Main_Acc_d
 ## Outcome neutral tests data preprocessing
 ### Sentence task
 
-We exclude the participants from this analysis because of the comprehension probe, but not because of missing condition.
+We exclude the participants from this analysis because of the comprehension probe, and because of missing conditions.
 
 ```{r}
 neutral_analysis_sentence <-
-  anti_join(test_raw, exclude_comprehension, by = "participant_id")
+  anti_join(test_raw, exclude_comprehension, by = "participant_id") %>% 
+  anti_join(., missing_condition, by = "participant_id")
 ```
 
 #### Read the specifications of the sentence regions
