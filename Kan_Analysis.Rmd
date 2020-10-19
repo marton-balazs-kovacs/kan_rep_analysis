@@ -149,7 +149,7 @@ reading_time_plot <-
                      plot_4, plot_5, plot_6,
                      plot_7)
 
-ggsave("Kan_Exp1_ReadingTime_Plot.png", device = "png", plot = reading_time_plot, dpi = 300, width = 208, height = 118, units = "mm")
+ggsave("Figures/Kan_Exp1_ReadingTime_Plot.png", device = "png", plot = reading_time_plot, dpi = 300, width = 208, height = 118, units = "mm")
 
 reading_time_plot
 ```
