@@ -284,6 +284,266 @@ Bf(sd = sd,
    tail = 1)
 ```
 
+## Sensitivity analysis
+### Test sentence reading time
+
+One of the reviewers suggested to calculate the ambiguity effect of the garden path sentences with the inclusion of the congruent and incongruent sentences but the exclusion of the filler sentences. This is not what we registered, but we will include this information in the supplementary materials.
+#### Import data
+
+```{r}
+sensitivity_sentence_data <- read_tsv("Data/Processed/Exp1/Kan_Processed_Exp1_Sensitivity_Sentence_data.tsv")
+```
+
+#### Nest the data
+
+```{r}
+sensitivity_sentence_data <-
+  sensitivity_sentence_data %>% 
+  nest(data = c(participant_id, Congruent, Incongruent))
+```
+
+#### Performing the t-tests
+
+We calculate the t test for each sentence region separately.
+
+```{r}
+sensitivity_sentence_data <-
+  sensitivity_sentence_data %>% 
+  mutate(t_value = map_dbl(data,
+                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "greater") %>% 
+                         broom::tidy() %>% 
+                         pull(statistic)),
+         df = map_dbl(data,
+                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "greater") %>% 
+                         broom::tidy() %>% 
+                         pull(parameter)),
+         p_value = map_dbl(data,
+                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "greater") %>% 
+                         broom::tidy() %>% 
+                         pull(p.value)),
+         raw_effect = map_dbl(data,
+                       ~ t.test(.$Incongruent, .$Congruent, paired = TRUE, alternative = "greater") %>% 
+                         broom::tidy() %>% 
+                         pull(estimate)))
+```
+
+#### Calculating the SE
+
+```{r}
+sensitivity_sentence_data <-
+  sensitivity_sentence_data %>% 
+  mutate(se = map2_dbl(raw_effect, t_value,
+                       ~ abs(.x / .y)))
+```
+
+#### Calculating the Bayes factor
+
+We are calculating the Bf for all the regions, but our main interest is the the temporarily ambiguous and disambiguating region.
+
+Checking the number of observations for each sentence region.
+
+```{r}
+map(sensitivity_sentence_data$data, nrow)
+```
+
+Creating a plots to visualize the difference.
+
+We are creating a plot function for visualization.
+
+```{r}
+sentence_region_plot <- function(df, name) {
+  df %>%
+  select(Congruent, Incongruent) %>% 
+  gather(key = "congruency", value = "resid_mean_reading_time") %>%  
+  group_by(congruency) %>% 
+  summarise(n = n(),
+            mean = mean(resid_mean_reading_time),
+            sd = sd(resid_mean_reading_time, na.rm = T),
+            se = sd / sqrt(n)) %>% 
+  ggplot() +
+  aes(x = congruency,
+      y = mean) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = mean - (se * 1.96),
+                    ymax = mean + (se  * 1.96)),
+                width = .1) +
+  labs(title = paste("Sentence region", name),
+       x = "Congruency of the sentence region",
+       y = "Mean residual reading time") +
+  theme_minimal() +
+  theme(
+    title = element_text(size = 8),
+    # axis.title = element_text(size = 5),
+    axis.text.y = element_text(size = 5)
+    # strip.text.x = element_text(size = 5)
+    )
+}
+
+sensitivity_sentence_data <- 
+  sensitivity_sentence_data %>% 
+  mutate(sentence_plot = map2(data, as.character(sentence_region_no), 
+                     ~ sentence_region_plot(.x, .y)))
+```
+
+Create one plot to show all of the sentence plots together.
+
+```{r}
+sensitivity_plot_1 <- sensitivity_sentence_data$sentence_plot[[1]] +
+  theme(axis.title.x = element_blank())
+sensitivity_plot_2 <- sensitivity_sentence_data$sentence_plot[[2]] +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank())
+sensitivity_plot_3 <- sensitivity_sentence_data$sentence_plot[[3]] +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank())
+sensitivity_plot_4 <- sensitivity_sentence_data$sentence_plot[[4]] +
+  theme(axis.title.x = element_blank())
+sensitivity_plot_5 <- sensitivity_sentence_data$sentence_plot[[5]] +
+  theme(axis.title.y = element_blank())
+sensitivity_plot_6 <- sensitivity_sentence_data$sentence_plot[[6]] +
+  theme(axis.title.y = element_blank())
+sensitivity_plot_7 <- sensitivity_sentence_data$sentence_plot[[7]]
+
+sensitivity_reading_time_plot <-
+  cowplot::plot_grid(sensitivity_plot_1, sensitivity_plot_2, sensitivity_plot_3,
+                     sensitivity_plot_4, sensitivity_plot_5, sensitivity_plot_6,
+                     sensitivity_plot_7)
+
+ggsave("Figures/Kan_Exp1_Sensitivity_ReadingTime_Plot.png", device = "png", plot = sensitivity_reading_time_plot, dpi = 300, width = 208, height = 118, units = "mm")
+
+sensitivity_reading_time_plot
+```
+
+Assigning SD theory for the Bayes factor analysis.
+
+```{r}
+sensitivity_sentence_data <- 
+  sensitivity_sentence_data %>% 
+  mutate(sd_theory = case_when(sentence_region_no == 3 ~ 40L,
+                               sentence_region_no == 4 ~ 18L,
+                               TRUE ~ 18L))
+```
+
+Running the Bf analysis for all sentence regions.
+
+```{r}
+sensitivity_sentence_data <- 
+  sensitivity_sentence_data %>% 
+  mutate(bf = pmap_dbl(list(se, raw_effect, df, sd_theory),
+                       ~ Bf(sd = ..1,
+                            obtained = ..2,
+                            dfdata = ..3,
+                            meanoftheory = 0,
+                            sdtheory = ..4,
+                            dftheory = 10^10,
+                            tail = 1)))
+```
+
+Create table with results.
+
+```{r}
+sensitivity_sentence_table <-
+  sensitivity_sentence_data %>% 
+  mutate(raw_effect = round(raw_effect, 2),
+         bf = round(bf, 2),
+         t_value = round(t_value, 2),
+         p_value = round(p_value, 2),
+         se = round(se, 2)) %>% 
+  rename(`Sentence region id` = sentence_region_no,
+         `t value` = t_value,
+         DF = df,
+         `p value` = p_value,
+         `Raw effect` = raw_effect,
+         SE = se,
+         B = bf) %>% 
+  select(-sentence_region_type,
+         -data,
+         -sentence_plot,
+         -sd_theory)
+
+papaja::apa_table(
+  sensitivity_sentence_table,
+  caption = "Results of the Comparison of the Mean Residual Reading Times in Each Sentence Region",
+  escape = TRUE
+)
+```
+
+Calculating the robustness region for temporarily ambiguous region.
+
+```{r}
+sensitivity_temporarily_data <- 
+  sensitivity_sentence_data %>% 
+  filter(sentence_region_type == "temporarly ambiguous")
+
+sd <- 
+  sensitivity_temporarily_data %>% 
+  pull(se)
+
+obtained <- 
+  sensitivity_temporarily_data %>% 
+  pull(raw_effect)
+
+df <- 
+  sensitivity_temporarily_data %>% 
+  pull(df)
+
+# lower
+Bf(sd = sd,
+   obtained = obtained,
+   dfdata = df,
+   meanoftheory = 0,
+   sdtheory = 0.59,
+   dftheory = 10^10,
+   tail = 1)
+
+# upper
+Bf(sd = sd,
+   obtained = obtained,
+   dfdata = df,
+   meanoftheory = 0,
+   sdtheory = 5893,
+   dftheory = 10^10,
+   tail = 1)
+```
+
+Calculating the robustness region for disambuguating region.
+
+```{r}
+sensitivity_disambiguating_data <- 
+  sensitivity_sentence_data %>% 
+  filter(sentence_region_type == "disambiguating ambiguous")
+
+sd <- 
+  sensitivity_disambiguating_data %>% 
+  pull(se)
+
+obtained <- 
+  sensitivity_disambiguating_data %>% 
+  pull(raw_effect)
+
+df <- 
+  sensitivity_disambiguating_data %>% 
+  pull(df)
+
+# lower
+Bf(sd = sd,
+   obtained = obtained,
+   dfdata = df,
+   meanoftheory = 0,
+   sdtheory = 2.6,
+   dftheory = 10^10,
+   tail = 1)
+
+# upper
+Bf(sd = sd,
+   obtained = obtained,
+   dfdata = df,
+   meanoftheory = 0,
+   sdtheory = 20,
+   dftheory = 10^10,
+   tail = 1)
+```
+
 ## Crucial tests
 ### Reaction time analysis
 #### Import data

@@ -30,58 +30,58 @@ source("R/utils.R")
 Read/write token should be created on OSF and it should be named as "osf_token_write".
 
 ```{r osf authentication}
-osf_auth(token = read_lines(list.files(pattern ="osf_token_write_.*.txt")))
+# osf_auth(token = read_lines(list.files(pattern ="osf_token_write_.*.txt")))
 ```
 
 ## Connect to data OSF folder
 
 ```{r osf connect to OSF folder, message = FALSE}
-data_guid <- "6bd43"
- 
-kan_project <- osf_retrieve_node(data_guid)
+# data_guid <- "6bd43"
+#  
+# kan_project <- osf_retrieve_node(data_guid)
 ```
 
 ## Download data locally
 
-```{r osf download data, message = FALSE, echo = T, results = "hide"}
-# Save data path in the project repository
- local_data_pth <- file.path("Data","Raw")
+<!-- ```{r osf download data, message = FALSE, echo = T, results = "hide"} -->
+<!-- # Save data path in the project repository -->
+<!--  local_data_pth <- file.path("Data","Raw") -->
 
-# Create local data structure if it is missing
- create_local_structure(local_data_pth)
+<!-- # Create local data structure if it is missing -->
+<!--  create_local_structure(local_data_pth) -->
 
-# List datafolders on OSF
-data_folder <-
-  kan_project %>%
-  osf_ls_nodes() %>%
-  filter(name == "Raw") %>%
-  osf_ls_files()
+<!-- # List datafolders on OSF -->
+<!-- data_folder <- -->
+<!--   kan_project %>% -->
+<!--   osf_ls_nodes() %>% -->
+<!--   filter(name == "Raw") %>% -->
+<!--   osf_ls_files() -->
 
-# List datafiles in data folders
-## Note: This only works if there is one file in one folder
-data_files <- tibble(name = NA_character_, id = NA_character_, meta = list())
-for (i in 1:nrow(data_folder)) {
-  data_files[i, ] <- osf_ls_files(data_folder[i, ])
-}
+<!-- # List datafiles in data folders -->
+<!-- ## Note: This only works if there is one file in one folder -->
+<!-- data_files <- tibble(name = NA_character_, id = NA_character_, meta = list()) -->
+<!-- for (i in 1:nrow(data_folder)) { -->
+<!--   data_files[i, ] <- osf_ls_files(data_folder[i, ]) -->
+<!-- } -->
 
-# Download datafiles to folders
-purrr::map2(data_files$id, data_folder$name,
-           ~ osf_retrieve_file(.x) %>% 
-             osf_download(path = file.path(local_data_pth, .y)))
+<!-- # Download datafiles to folders -->
+<!-- purrr::map2(data_files$id, data_folder$name, -->
+<!--            ~ osf_retrieve_file(.x) %>% -->
+<!--              osf_download(path = file.path(local_data_pth, .y))) -->
 
-# Uncomment following line to remove the data
-# remove_local_data(local_data_pth)
-```
+<!-- # Uncomment following line to remove the data -->
+<!-- # remove_local_data(local_data_pth) -->
+<!-- ``` -->
 
-## Create folder structure for the output files
+<!-- ## Create folder structure for the output files -->
 
-```{r}
-# Save data path in the project repository
-# local_data_pth <- file.path("Data","Processed")
- 
-# Create local data structure if it is missing
-# create_local_structure(local_data_pth)
-```
+<!-- ```{r} -->
+<!-- # Save data path in the project repository -->
+<!-- # local_data_pth <- file.path("Data","Processed") -->
+
+<!-- # Create local data structure if it is missing -->
+<!-- # create_local_structure(local_data_pth) -->
+<!-- ``` -->
 
 # Exp 1
 ## Read files
@@ -374,8 +374,8 @@ main_analysis_data <-
          is_congruent = case_when(is_previous_sentence == 1L & stim_type == "Congruent" ~ 1L,
                                   is_previous_sentence == 1L & stim_type == "Incongruent" ~ 0L,
                                   TRUE ~ NA_integer_),
-         is_previous_correct = case_when(is_previous_sentence == 1L ~ lag(correct),
-                                         TRUE ~ NA_integer_),
+         # is_previous_correct = case_when(is_previous_sentence == 1L ~ lag(correct),
+         #                                 TRUE ~ NA_integer_),
          is_correct = correct) %>% 
   filter(is_previous_sentence == 1L) %>%
   select(-correct, -procedure, -is_previous_sentence)
@@ -728,7 +728,8 @@ As a test we count the number of sentences per participant. Each participants sh
 mean_sentence_values %>%
   group_by(participant_id) %>% 
   distinct(sentence_id) %>% 
-  count()
+  count() %>% 
+  filter(n != 71)
 ```
 
 As a test we check the number of all sentence regions per participant. Each participants should have 471 sentence regions.
@@ -892,6 +893,128 @@ neutral_analysis_sentence <-
 
 ```{r}
 write_tsv(neutral_analysis_sentence, "Data/Processed/Exp1/Kan_Processed_Exp1_OutcomeNeutral_Sentence_data.tsv")
+```
+
+### Sensitivity analysis
+
+One of the reviewers suggested to use both the incongruent and the congruent sentences to calculate the residual reading times with thee omission of the filler sentences. We decided to include the result of this calculation in the supplementary materials as a sensitivity test. The decisions will be made on the registered method presented earlier.
+
+#### Calculating the residual reading times
+ 
+In order to account for the biasing effect of the length of the sentence region on the reading time, we calculated the residual reading time for each sentence region. For every sentence-region (see the supplementary materials for the partition of each sentence into sentence-regions) of each participant we applied a simple linear regression with the actual reading time as the outcome variable and the length of the region in the number of characters as the predictor variable.
+
+At the sensitivity test we included only the congruent (N = 21) and the incongruent (N = 21) in the linear regression.
+
+```{r}
+sensitivity_residual_model <-
+  mean_sentence_values %>% 
+  filter(sentence_type != "Filler") %>%
+  group_by(participant_id, sentence_region_no) %>% 
+  group_nest() %>% 
+  mutate(model = map(data,
+                     ~ lm(mean_sentence_region_reading_time ~ mean_sentence_region_word_length,
+                          data = .x)))
+```
+
+We run a few checks of the models.
+
+The distribution of the number of sentence regions:
+
+```{r}
+mean_sentence_values %>% 
+  filter(sentence_type != "Filler") %>%
+  group_by(sentence_id) %>% 
+  distinct(sentence_region_no) %>% 
+  summarize(count_sentence_regions = n()) %>% 
+  group_by(count_sentence_regions) %>% 
+  summarize(number_of_sentences = n()) %>% 
+  ungroup() %>% 
+  mutate(number_of_all_sentences = sum(number_of_sentences))
+```
+
+There are 71 sentences but after the exclusion of the 29 filler sentences there are 42 sentences left. The maximum number of sentence regions is 8. As we have 132 participants we will have 132 * 8 = 1056 data points.
+
+__NOTE:__ Even tho sentence 57 is a congruent sentence which originally has 9 sentence regions, after excluding the third sentence region at this part of the analysis it only has 8.
+
+The sum of all sentence regions:
+
+```{r}
+mean_sentence_values %>% 
+  filter(sentence_type != "Filler") %>%
+  group_by(sentence_id, sentence_type) %>% 
+  distinct(sentence_region_no) %>%
+  summarize(count_sentence_regions = n()) %>%
+  group_by(sentence_type) %>% 
+  summarize(sentence_regions_per_sentence_type = sum(count_sentence_regions)) %>% 
+  ungroup() %>% 
+  mutate(sum = sum(sentence_regions_per_sentence_type))
+```
+
+Now that we have the fitted model in the model variable for each sentence region, we calculate the predicted reading times of the model for the congruent sentences. This function also calculates the residual reading times because the data provided for the model is the same as the data that will be augmented with .fitted and .resid.
+
+```{r}
+sensitivity_residual_model <-
+  sensitivity_residual_model %>% 
+  mutate(residual_reading_time = map2(data, model,
+                                           ~ broom::augment(x = .y,
+                                                            data = .x)))
+```
+
+In the Kan et al. (2013) paper each sentence region had only one data point from each participant. Therefore, we average the residual reading times of the sentences for each sentence region per congruency condition per participant.
+
+```{r}
+sensitivity_residual_model_aggregated <- 
+  sensitivity_residual_model %>% 
+  select(participant_id, sentence_region_no, residual_reading_time) %>% 
+  unnest(cols = c(residual_reading_time)) %>% 
+  rename(residual_reading_time = .resid) %>% 
+  group_by(participant_id, sentence_type, sentence_region_no) %>%
+  summarise(mean_residual_reading_time = mean(residual_reading_time))
+```
+
+Checking the number of responses for each sentence region:
+
+```{r}
+sensitivity_residual_model_aggregated %>% 
+  group_by(sentence_region_no, sentence_type) %>% 
+  count()
+```
+
+Transforming the datatable for the incongruent and congruent sentence region comparisons. In the congruent sentences there are more sentence regions than in the incongruent sentences. We exclude these from further analysis.
+
+```{r}
+sensitivity_analysis_sentence <- 
+  sensitivity_residual_model_aggregated %>% 
+  spread(key = sentence_type, value = mean_residual_reading_time) %>%
+  filter(!is.na(Incongruent)) %>%
+  group_by(sentence_region_no) %>% 
+  nest()
+```
+
+### Flagging sentence regions of interest
+
+We expect to find a difference in the temporarily ambiguous region and the disambiguating region. The sentence region in the incongruent sentences containing the temporarily ambiguous words is the 3rd region, while the disambiguation region is the 4th region.
+
+```{r}
+sensitivity_analysis_sentence <- 
+  sensitivity_analysis_sentence %>% 
+  mutate(sentence_region_type = case_when(sentence_region_no == 3L ~ "temporarly ambiguous",
+                                          sentence_region_no == 4L ~ "disambiguating ambiguous",
+                                          TRUE ~ "not ambiguous"))
+```
+
+### Unnesting the data for saving
+
+```{r}
+sensitivity_analysis_sentence <- 
+  sensitivity_analysis_sentence %>%
+  unnest(data)
+```
+
+#### Saving the dataset
+
+```{r}
+write_tsv(sensitivity_analysis_sentence, "Data/Processed/Exp1/Kan_Processed_Exp1_Sensitivity_Sentence_data.tsv")
 ```
 
 ```{r}
@@ -1120,10 +1243,11 @@ main_analysis_data <-
                                             TRUE ~ NA_integer_),
          is_congruent = case_when(is_previous_necker == 1L & stim_type == "congruent" ~ 1L,
                                   is_previous_necker == 1L & stim_type == "incongruent" ~ 0L,
-                                  TRUE ~ NA_integer_),
-         is_previous_correct = case_when(is_previous_necker == 1L & lag(procedure) %in% c("neck_con_r", "neck_con_l") ~ lag(correct),
-                                         is_previous_necker == 1L & lag(procedure) ==  "neck_inco" ~ NA_integer_,
-                                         TRUE ~ NA_integer_)) %>% 
+                                  TRUE ~ NA_integer_)
+         # is_previous_correct = case_when(is_previous_necker == 1L & lag(procedure) %in% c("neck_con_r", "neck_con_l") ~ lag(correct),
+         #                                 is_previous_necker == 1L & lag(procedure) ==  "neck_inco" ~ NA_integer_,
+         #                                 TRUE ~ NA_integer_)
+         ) %>% 
   rename(is_correct = correct)
 ```
 
@@ -1495,10 +1619,11 @@ main_analysis_data <-
                                            TRUE ~ NA_integer_),
          is_congruent = case_when(is_previous_necker == 1L & stim_type == "congruent" ~ 1L,
                                   is_previous_necker == 1L & stim_type == "incongruent" ~ 0L,
-                                  TRUE ~ NA_integer_),
-         is_previous_correct = case_when(is_previous_necker == 1L & lag(procedure) %in% c("neck_con_r", "neck_con_l") ~ lag(correct),
-                                         is_previous_necker == 1L & lag(procedure) ==  "neck_inco" ~ NA_integer_,
-                                         TRUE ~ NA_integer_)) %>% 
+                                  TRUE ~ NA_integer_)
+         # is_previous_correct = case_when(is_previous_necker == 1L & lag(procedure) %in% c("neck_con_r", "neck_con_l") ~ lag(correct),
+         #                                 is_previous_necker == 1L & lag(procedure) ==  "neck_inco" ~ NA_integer_,
+         #                                 TRUE ~ NA_integer_)
+         ) %>% 
   rename(is_correct = correct)
 ```
 
