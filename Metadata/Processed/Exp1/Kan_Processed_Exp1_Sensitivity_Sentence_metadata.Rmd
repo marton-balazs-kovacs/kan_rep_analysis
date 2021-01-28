@@ -17,8 +17,8 @@ Set options
 
 ```{r setup}
 knitr::opts_chunk$set(
-  warning = TRUE, # show warnings during codebook generation
-  message = TRUE, # show messages during codebook generation
+  warning = FALSE, # show warnings during codebook generation
+  message = FALSE, # show messages during codebook generation
   error = TRUE, # do not interrupt codebook generation in case of errors,
                 # usually better for debugging
   echo = TRUE  # show R code
@@ -34,7 +34,7 @@ library(codebook)
 library(labelled)
 
 # Load data
-codebook_data <- vroom::vroom("Data/Processed/Exp1/Kan_Processed_Exp1_Sensitivity_Sentence_data.tsv")
+codebook_data <- vroom::vroom(here::here("Data/Processed/Exp1/Kan_Processed_Exp1_Sensitivity_Sentence_data.tsv"))
 
 # Label variables
 var_label(codebook_data$participant_id) <- "Unique identifier of the participant"

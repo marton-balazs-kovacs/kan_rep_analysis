@@ -1,1 +1,47 @@
-# kan_rep_analysis
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+# Analysis for the replication of Kan et al. (2013)
+
+<!-- badges: start -->
+
+<!-- badges: end -->
+
+## Source to raw
+
+To replicate our code you first have to run the code in the
+`Kan_Source_Raw.Rmd` file. This code transforms the source data to .tsv
+and only makes really small adjustments. The resulting raw datafiles
+will still contain a lot of information that is not needed for the
+analysis but added by Opensesame by default.
+
+## Raw to processed
+
+Then you have to run the code in the `Kan_Raw_Processed.Rmd` file. This
+code cleans the dataset, include all the exclusions and transform the
+structure of the dataset to a tidy format so it is ready for the
+analysis. However, the processed datafiles will still include trial
+level data.
+
+## Analysis
+
+You can find the analysis code in the `Kan_Analysis.Rmd` file. The code
+starts with some necessary aggregations of the data for the analysis.
+All the code that is used to create the figures are included in this
+file.
+
+## Additional information
+
+All the datafiles can be found on the projects’
+[OSF](https://osf.io/6bd43/) repository.
+
+All the metadata files are in the `Metadata/` folder following the same
+folder structure as the data files in the OSF repository.
+
+All the figures created in `Kan_Analysis.Rmd` are saved in the
+`Figures/` folder.
+
+Custom R scripts for the project can be found in the `R/` folder.
+
+`sentence_region.xlsx` contains the demarcation of every sentence
+stimuli used in Exp 1 into sentence regions.
