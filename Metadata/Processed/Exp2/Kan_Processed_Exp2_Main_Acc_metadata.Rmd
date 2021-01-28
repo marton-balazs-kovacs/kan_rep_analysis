@@ -1,0 +1,59 @@
+---
+title: "Kan Exp2 accuracy data codebook"
+output:
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    code_folding: 'hide'
+    self_contained: true
+  pdf_document:
+    toc: yes
+    toc_depth: 4
+    latex_engine: xelatex
+---
+
+Set options
+
+```{r setup}
+knitr::opts_chunk$set(
+  warning = TRUE, # show warnings during codebook generation
+  message = TRUE, # show messages during codebook generation
+  error = TRUE, # do not interrupt codebook generation in case of errors,
+                # usually better for debugging
+  echo = TRUE  # show R code
+)
+ggplot2::theme_set(ggplot2::theme_bw())
+
+```
+
+Prepare codebook
+
+```{r prepare_codebook}
+library(codebook)
+library(labelled)
+
+# Load data
+codebook_data <- vroom::vroom("Data/Processed/Exp2/Kan_Processed_Exp2_Main_Acc_data.tsv")
+
+# Label variables
+var_label(codebook_data$participant_id) <- "Unique identifier of the participant"
+var_label(codebook_data$lab) <- "Unique identifier of the data collection site"
+var_label(codebook_data$loop_num) <- "Unique identifier of pseudo randomized stimulus set that was shown to the participant"
+var_label(codebook_data$trial_id) <- "Unique identifier of a trial"
+var_label(codebook_data$stim_type) <- "Congruency of the Stroop trial"
+var_label(codebook_data$stimulus) <- "Word of the Stroop trial"
+var_label(codebook_data$stim_color) <- "Ink of the Stroop trial"
+var_label(codebook_data$response_time) <- "Response time to the Stroop trial in milliseconds"
+var_label(codebook_data$is_previous_congruent) <- "Congruency of the previous trial"
+var_label(codebook_data$is_congruent) <- "Congruency of the Stroop trial"
+var_label(codebook_data$is_correct) <- "Correctness of the Stroop trial"
+var_label(codebook_data$mean_reversal) <- "Mean number of reversals"
+var_label(codebook_data$reversal_group) <- "Whether the partcipant experienced a high or a low number of reversals based on the median split of all mean reversal scores"
+```
+
+Create codebook
+
+```{r codebook}
+codebook(codebook_data)
+```

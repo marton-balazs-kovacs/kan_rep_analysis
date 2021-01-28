@@ -1,0 +1,51 @@
+---
+title: "Kan Exp1 Outcome-neutral test sentence data codebook"
+output:
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    code_folding: 'hide'
+    self_contained: true
+  pdf_document:
+    toc: yes
+    toc_depth: 4
+    latex_engine: xelatex
+---
+
+Set options
+
+```{r setup}
+knitr::opts_chunk$set(
+  warning = TRUE, # show warnings during codebook generation
+  message = TRUE, # show messages during codebook generation
+  error = TRUE, # do not interrupt codebook generation in case of errors,
+                # usually better for debugging
+  echo = TRUE  # show R code
+)
+ggplot2::theme_set(ggplot2::theme_bw())
+
+```
+
+Prepare codebook
+
+```{r prepare_codebook}
+library(codebook)
+library(labelled)
+
+# Load data
+codebook_data <- vroom::vroom("Data/Processed/Exp1/Kan_Processed_Exp1_OutcomeNeutral_Sentence_data.tsv")
+
+# Label variables
+var_label(codebook_data$participant_id) <- "Unique identifier of the participant"
+var_label(codebook_data$sentence_region_no) <- "Unique identifier of the sentence region"
+var_label(codebook_data$sentence_region_type) <- "Type of the sentence region"
+var_label(codebook_data$Congruent) <- "Mean residual reading time (ms) of the sentence regions in the congruent sentences"
+var_label(codebook_data$Incongruent) <- "Mean residual reading time (ms) of the sentence regions in the incongruent sentences"
+```
+
+Create codebook
+
+```{r codebook}
+codebook(codebook_data)
+```

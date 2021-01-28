@@ -1,0 +1,64 @@
+---
+title: "Kan Exp3 Rt data codebook"
+output:
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    code_folding: 'hide'
+    self_contained: true
+  pdf_document:
+    toc: yes
+    toc_depth: 4
+    latex_engine: xelatex
+---
+
+Set options
+
+```{r setup}
+knitr::opts_chunk$set(
+  warning = TRUE, # show warnings during codebook generation
+  message = TRUE, # show messages during codebook generation
+  error = TRUE, # do not interrupt codebook generation in case of errors,
+                # usually better for debugging
+  echo = TRUE  # show R code
+)
+ggplot2::theme_set(ggplot2::theme_bw())
+
+```
+
+Prepare codebook
+
+```{r prepare_codebook}
+library(codebook)
+library(labelled)
+
+# Load data
+codebook_data <- vroom::vroom("Data/Processed/Exp3/Kan_Processed_Exp3_Main_Rt_data.tsv")
+
+# Label variables
+var_label(codebook_data$participant_id) <- "Unique identifier of the participant"
+var_label(codebook_data$lab) <- "Unique identifier of the data collection site"
+var_label(codebook_data$loop_num) <- "Unique identifier of pseudo randomized stimulus set that was shown to the participant"
+var_label(codebook_data$conflict_condition) <- "Congruency of the previous and current trial (cc, ii, ci, ic)"
+var_label(codebook_data$trial_id) <- "Unique identifier of a trial"
+var_label(codebook_data$stim_type) <- "Congruency of the Stroop trial"
+var_label(codebook_data$stimulus) <- "Word of the Stroop trial"
+var_label(codebook_data$stim_color) <- "Ink of the Stroop trial"
+var_label(codebook_data$response_time) <- "Response time to the Stroop trial in milliseconds"
+var_label(codebook_data$is_previous_congruent) <- "Congruency of the previous trial"
+var_label(codebook_data$is_congruent) <- "Congruency of the Stroop trial"
+var_label(codebook_data$is_correct) <- "Correctness of the Stroop trial"
+var_label(codebook_data$mean_acc) <- "Mean accuracy of the parcipant"
+var_label(codebook_data$mean_rt) <- "Mean reaction time of the parcipant"
+var_label(codebook_data$sd_rt) <- "Standard deviation of the reaction time of the participant"
+var_label(codebook_data$cutoff_value_high) <- "Upper cutoff value for the trial"
+var_label(codebook_data$cutoff_value_low) <- "Lower cutoff value for the trial"
+var_label(codebook_data$is_outlier) <- "Flagging whether the trials' original response time was a low outlier (2), a high outlier (1) or not an outlier (0)"
+```
+
+Create codebook
+
+```{r codebook}
+codebook(codebook_data)
+```

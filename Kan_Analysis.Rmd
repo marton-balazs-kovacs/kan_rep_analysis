@@ -1319,6 +1319,16 @@ main_analysis_rt_data %>%
             all_sd_reversal = sd(mean_reversal, na.rm = TRUE))
 ```
 
+Number of participants in each reversal group.
+
+```{r}
+main_analysis_rt_data %>% 
+  distinct(participant_id, .keep_all = TRUE) %>% 
+  group_by(reversal_group) %>% 
+  summarise(n = n())
+```
+
+
 ### Figures
 
 The congruency sequence effect for the reaction time responses with reversal groups.
@@ -2024,21 +2034,22 @@ kan_exp2_acc_cse_rev_plot <-
       shape = is_congruent,
       group = is_congruent) +
   geom_path() +
-  geom_point(size = 4) +
+  geom_point(size = 6) +
   geom_errorbar(aes(ymin = mean_acc - (se_acc * 1.96),
                     ymax = mean_acc + (se_acc * 1.96)),
                 width = .1) +
+  scale_y_continuous(limits = c(.65, .9)) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
   ylab("Accuracy") +
   guides(shape = guide_legend(title = "Congruency of \n the current trial")) +
   facet_wrap( ~ reversal_group) +
   theme_minimal() +
-  theme(axis.title = element_text(size = 20),
-        axis.text = element_text(size = 15),
-        legend.text = element_text(size = 15),
-        legend.title = element_text(size = 15),
-        strip.text.x = element_text(size = 15),
+  theme(axis.title = element_text(size = 25),
+        axis.text = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        strip.text.x = element_text(size = 20),
         legend.position = c(.9, .8))
 
 kan_exp2_acc_cse_rev_plot
@@ -2072,20 +2083,21 @@ kan_exp2_acc_cse_plot <-
       shape = is_congruent,
       group = is_congruent) +
   geom_path() +
-  geom_point(size = 4) +
+  geom_point(size = 6) +
   geom_errorbar(aes(ymin = mean_acc - (se_acc * 1.96),
                     ymax = mean_acc + (se_acc * 1.96)),
                 width = .1) +
+  scale_y_continuous(limits = c(.65, .9)) +
   guides(color = FALSE) +
   xlab("Congruency of the previous trial")+
   ylab("Accuracy") +
   guides(shape = guide_legend(title = "Congruency of \n the current trial")) +
   theme_minimal() +
-  theme(axis.title = element_text(size = 20),
-        axis.text = element_text(size = 15),
-        legend.text = element_text(size = 15),
-        legend.title = element_text(size = 15),
-        strip.text.x = element_text(size = 15),
+  theme(axis.title = element_text(size = 25),
+        axis.text = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        strip.text.x = element_text(size = 20),
         legend.position = c(.9, .8))
 
 kan_exp2_acc_cse_plot
