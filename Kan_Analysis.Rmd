@@ -603,10 +603,13 @@ kan_exp1_rt_cse_plot <-
   guides(shape = guide_legend(title = "Congruency of \n the current trial")) +
   theme_minimal() +
   theme(axis.title = element_text(size = 25),
+        axis.title.x = element_text(margin = margin(.5, unit = "cm")),
         axis.text = element_text(size = 20),
-        legend.text = element_text(size = 20),
+        legend.text = element_text(size = 15),
         legend.title = element_text(size = 20),
-        legend.position = c(.85, .4))
+        legend.position = c(.85, .5),
+        legend.title.align = 1,
+        legend.key.size = unit(1.5, "cm"))
 
 kan_exp1_rt_cse_plot
 ```
@@ -614,7 +617,7 @@ kan_exp1_rt_cse_plot
 Saving the figure.
 
 ```{r}
-ggsave("Figures/Kan_Exp1_Rt_Cse_Plot.png", width = 14.4, height = 8, plot = kan_exp1_rt_cse_plot)
+ggsave("Figures/Kan_Exp1_Rt_Cse_Plot.png", width = 12.4, height = 8, plot = kan_exp1_rt_cse_plot)
 ```
 
 #### Data preprocessing
@@ -979,10 +982,13 @@ kan_exp1_acc_cse_plot <-
   guides(shape = guide_legend(title = "Congruency of \n the current trial")) +
   theme_minimal() +
   theme(axis.title = element_text(size = 25),
+        axis.title.x = element_text(margin = margin(.5, unit = "cm")),
         axis.text = element_text(size = 20),
-        legend.text = element_text(size = 20),
+        legend.text = element_text(size = 15),
         legend.title = element_text(size = 20),
-        legend.position = c(.85, .4))
+        legend.position = c(.85, .5),
+        legend.title.align = 1,
+        legend.key.size = unit(1.5, "cm"))
 
 kan_exp1_acc_cse_plot
 ```
@@ -1366,11 +1372,13 @@ kan_exp2_rt_cse_rev_plot <-
   facet_wrap( ~ reversal_group) +
   theme_minimal() +
   theme(axis.title = element_text(size = 25),
+        axis.title.x = element_text(margin = margin(.5, unit = "cm")),
         axis.text = element_text(size = 20),
-        legend.text = element_text(size = 20),
+        legend.text = element_text(size = 15),
         legend.title = element_text(size = 20),
-        strip.text.x = element_text(size = 20),
-        legend.position = c(.9, .3))
+        legend.position = c(.5, .8),
+        legend.title.align = 1,
+        legend.key.size = unit(1.5, "cm"))
 
 kan_exp2_rt_cse_rev_plot
 ```
