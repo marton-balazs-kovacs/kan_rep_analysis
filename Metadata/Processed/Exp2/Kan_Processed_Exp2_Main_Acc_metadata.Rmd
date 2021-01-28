@@ -17,8 +17,8 @@ Set options
 
 ```{r setup}
 knitr::opts_chunk$set(
-  warning = TRUE, # show warnings during codebook generation
-  message = TRUE, # show messages during codebook generation
+  warning = FALSE, # show warnings during codebook generation
+  message = FALSE, # show messages during codebook generation
   error = TRUE, # do not interrupt codebook generation in case of errors,
                 # usually better for debugging
   echo = TRUE  # show R code
@@ -34,13 +34,14 @@ library(codebook)
 library(labelled)
 
 # Load data
-codebook_data <- vroom::vroom("Data/Processed/Exp2/Kan_Processed_Exp2_Main_Acc_data.tsv")
+codebook_data <- vroom::vroom(here::here("Data/Processed/Exp2/Kan_Processed_Exp2_Main_Acc_data.tsv"))
 
 # Label variables
 var_label(codebook_data$participant_id) <- "Unique identifier of the participant"
 var_label(codebook_data$lab) <- "Unique identifier of the data collection site"
 var_label(codebook_data$loop_num) <- "Unique identifier of pseudo randomized stimulus set that was shown to the participant"
 var_label(codebook_data$trial_id) <- "Unique identifier of a trial"
+var_label(codebook_data$conflict_condition) <- "Congruency of the previous and current trial (cc, ii, ci, ic)"
 var_label(codebook_data$stim_type) <- "Congruency of the Stroop trial"
 var_label(codebook_data$stimulus) <- "Word of the Stroop trial"
 var_label(codebook_data$stim_color) <- "Ink of the Stroop trial"

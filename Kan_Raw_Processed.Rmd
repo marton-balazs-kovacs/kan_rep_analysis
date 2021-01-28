@@ -30,58 +30,58 @@ source("R/utils.R")
 Read/write token should be created on OSF and it should be named as "osf_token_write".
 
 ```{r osf authentication}
-# osf_auth(token = read_lines(list.files(pattern ="osf_token_write_.*.txt")))
+osf_auth(token = read_lines(list.files(pattern ="osf_token_write_.*.txt")))
 ```
 
 ## Connect to data OSF folder
 
 ```{r osf connect to OSF folder, message = FALSE}
-# data_guid <- "6bd43"
+data_guid <- "6bd43"
 #  
-# kan_project <- osf_retrieve_node(data_guid)
+kan_project <- osf_retrieve_node(data_guid)
 ```
 
 ## Download data locally
 
-<!-- ```{r osf download data, message = FALSE, echo = T, results = "hide"} -->
-<!-- # Save data path in the project repository -->
-<!--  local_data_pth <- file.path("Data","Raw") -->
+```{r osf download data, message = FALSE, echo = T, results = "hide"}
+# Save data path in the project repository
+ local_data_pth <- file.path("Data","Raw")
 
-<!-- # Create local data structure if it is missing -->
-<!--  create_local_structure(local_data_pth) -->
+# Create local data structure if it is missing
+ create_local_structure(local_data_pth)
 
-<!-- # List datafolders on OSF -->
-<!-- data_folder <- -->
-<!--   kan_project %>% -->
-<!--   osf_ls_nodes() %>% -->
-<!--   filter(name == "Raw") %>% -->
-<!--   osf_ls_files() -->
+# List datafolders on OSF
+data_folder <-
+  kan_project %>%
+  osf_ls_nodes() %>%
+  filter(name == "Raw") %>%
+  osf_ls_files()
 
-<!-- # List datafiles in data folders -->
-<!-- ## Note: This only works if there is one file in one folder -->
-<!-- data_files <- tibble(name = NA_character_, id = NA_character_, meta = list()) -->
-<!-- for (i in 1:nrow(data_folder)) { -->
-<!--   data_files[i, ] <- osf_ls_files(data_folder[i, ]) -->
-<!-- } -->
+# List datafiles in data folders
+## Note: This only works if there is one file in one folder
+data_files <- tibble(name = NA_character_, id = NA_character_, meta = list())
+for (i in 1:nrow(data_folder)) {
+  data_files[i, ] <- osf_ls_files(data_folder[i, ])
+}
 
-<!-- # Download datafiles to folders -->
-<!-- purrr::map2(data_files$id, data_folder$name, -->
-<!--            ~ osf_retrieve_file(.x) %>% -->
-<!--              osf_download(path = file.path(local_data_pth, .y))) -->
+# Download datafiles to folders
+purrr::map2(data_files$id, data_folder$name,
+           ~ osf_retrieve_file(.x) %>%
+             osf_download(path = file.path(local_data_pth, .y)))
 
-<!-- # Uncomment following line to remove the data -->
-<!-- # remove_local_data(local_data_pth) -->
-<!-- ``` -->
+# Uncomment following line to remove the data
+# remove_local_data(local_data_pth)
+```
 
-<!-- ## Create folder structure for the output files -->
+## Create folder structure for the output files
 
-<!-- ```{r} -->
-<!-- # Save data path in the project repository -->
-<!-- # local_data_pth <- file.path("Data","Processed") -->
+```{r}
+# Save data path in the project repository
+# local_data_pth <- file.path("Data","Processed")
 
-<!-- # Create local data structure if it is missing -->
-<!-- # create_local_structure(local_data_pth) -->
-<!-- ``` -->
+# Create local data structure if it is missing
+# create_local_structure(local_data_pth)
+```
 
 # Exp 1
 ## Read files
@@ -1407,6 +1407,16 @@ main_analysis_rt_conf_data <-
 
 #### Saving the datasets
 
+Deleting not needed variables before saving.
+
+```{r}
+main_analysis_rt_conf_data <- 
+  main_analysis_rt_conf_data %>% 
+  select(-reversal, -is_previous_necker, -procedure)
+```
+
+Saving the dataset
+
 ```{r}
 write_tsv(main_analysis_rt_conf_data, "Data/Processed/Exp2/Kan_Processed_Exp2_Main_Rt_data.tsv")
 ```
@@ -1428,7 +1438,8 @@ main_analysis_acc_data <-
 main_analysis_acc_data <-
   main_analysis_acc_data %>% 
   select(-is_previous_necker,
-         -reversal)
+         -reversal,
+         -procedure)
 ```
 
 #### Saving the dataset
@@ -1732,7 +1743,9 @@ main_analysis_acc_data <-
   select(-is_previous_necker,
          -reversal,
          -score,
-         -drop_comprehension)
+         -drop_comprehension,
+         -procedure,
+         -score)
 ```
 
 #### Saving the dataset
@@ -1797,6 +1810,16 @@ main_analysis_rt_data <-
 ```
 
 #### Saving the dataset
+
+Drop not needed variables before saving.
+
+```{r}
+main_analysis_rt_data <-
+  main_analysis_rt_data %>%
+  select(-procedure, -reversal, -score, -is_previous_necker, -drop_comprehension)
+```
+
+Saving the dataset.
 
 ```{r}
 write_tsv(main_analysis_rt_data, "Data/Processed/Exp3/Kan_Processed_Exp3_Main_Rt_data.tsv")
